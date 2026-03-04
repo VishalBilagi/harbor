@@ -30,5 +30,10 @@ let package = Package(
             dependencies: ["PortKit"],
             path: "Sources/harbor"
         ),
+        .testTarget(
+            name: "PortKitTests",
+            dependencies: ["PortKit"],
+            path: "Tests/PortKitTests"
+        ),
     ]
 )

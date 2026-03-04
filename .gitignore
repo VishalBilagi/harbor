@@ -69,6 +69,7 @@ fastlane/test_output
 # Go / HarborTUI
 HarborTUI/bin/
 HarborTUI/.cache/
+HarborTUI/harbor-tui
 *.test
 coverage.out
 cover.out
