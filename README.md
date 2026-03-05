@@ -25,6 +25,14 @@ swift build
 swift test
 ```
 
+### CLI smoke checks
+
+```sh
+swift run harbor list --json
+swift run harbor who 3000 --json
+swift run harbor sink --pid <pid> --yes
+```
+
 ### macOS app
 
 ```sh
@@ -43,6 +51,13 @@ cd HarborTUI
 go run ./cmd/harbor-tui --interval 2
 ```
 
+### Go TUI tests
+
+```sh
+cd HarborTUI
+go test ./...
+```
+
 TUI controls:
 
 - `/` focus filter
@@ -53,8 +68,36 @@ TUI controls:
 - `r` reconnect data source (stream first, polling fallback)
 - `q` quit
 
-## Notes
+## Runtime behavior
 
 - `PortKit` is the shared source of truth for listener discovery and process metadata.
 - The macOS app will consume `PortKit` directly.
 - The Go TUI will consume machine-readable CLI output instead of reimplementing scanning logic.
+- `harbor watch --jsonl` is the preferred stream transport for the TUI; if the stream closes or fails, the TUI automatically falls back to `harbor list --json` polling.
+- `harbor` JSON/JSONL includes a stable schema envelope:
+  - `schemaVersion`
+  - `generatedAt`
+  - `listeners[]` rows with nullable metadata fields
+
+## Metadata contracts
+
+- `commandLine` and `cwd` are best-effort and can be `null`.
+- `cpuPercent` is `null` on a process's first observed sample, then filled after a second sample when deltas are available.
+- `memBytes` can be `null` when process info cannot be read.
+- `requiresAdminToKill` can be `null` in machine output and is interpreted conservatively by UIs.
+- Cache entries are keyed by PID + process start time; when a PID is reused by a new process, cached metadata is invalidated.
+
+## Sink behavior and safety
+
+- `sink` uses `SIGTERM` by default and `SIGKILL` with `--force`.
+- Harbor never escalates privileges and never prompts for admin credentials.
+- If ownership cannot be verified or a process is outside the current user, sink returns `requiresAdmin`.
+- Non-interactive runs require `--yes`; ambiguous port-to-PID mappings require an explicit `--pid`.
+
+## Performance and cadence checks
+
+- Harbor is designed for 1-2 second refresh cadence on normal development machines.
+- Use these checks during local validation:
+  - `swift test` (includes parser/metadata/CLI cadence smoke coverage)
+  - `cd HarborTUI && go test ./...` (includes stream-mode + polling-fallback tests)
+  - `go run ./cmd/harbor-tui --interval 1` for manual responsiveness validation

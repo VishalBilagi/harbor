@@ -25,6 +25,20 @@ let package = Package(
             name: "PortKit",
             path: "Sources/PortKit"
         ),
+        .target(
+            name: "HarborMenuCore",
+            dependencies: ["PortKit"],
+            path: "Harbor",
+            exclude: [
+                "Assets.xcassets",
+                "AppSettings.swift",
+                "ContentView.swift",
+                "HarborApp.swift",
+                "HarborMenuModel.swift",
+                "HarborSettingsView.swift",
+            ],
+            sources: ["ListenerRow.swift"]
+        ),
         .executableTarget(
             name: "harbor",
             dependencies: ["PortKit"],
@@ -33,12 +47,18 @@ let package = Package(
         .testTarget(
             name: "PortKitTests",
             dependencies: ["PortKit"],
-            path: "Tests/PortKitTests"
+            path: "Tests/PortKitTests",
+            resources: [.copy("Fixtures/lsof")]
         ),
         .testTarget(
             name: "HarborCLITests",
             dependencies: ["harbor", "PortKit"],
             path: "Tests/HarborCLITests"
+        ),
+        .testTarget(
+            name: "HarborMenuCoreTests",
+            dependencies: ["HarborMenuCore", "PortKit"],
+            path: "Tests/HarborMenuCoreTests"
         ),
     ]
 )

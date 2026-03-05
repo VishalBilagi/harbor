@@ -208,6 +208,90 @@ import Testing
     #expect(object["requiresAdminToKill"] is NSNull)
 }
 
+@Test func listCommandRendersHumanOutputTable() {
+    let snapshot = ListenerSnapshot(
+        generatedAt: Date(),
+        listeners: [
+            makeListener(port: 3000, bindAddress: "*", family: .ipv4, pid: 101, processName: "node"),
+            makeListener(port: 5432, bindAddress: "127.0.0.1", family: .ipv4, pid: 202, processName: "postgres")
+        ]
+    )
+
+    let result = runCLI(
+        arguments: ["harbor", "list", "--no-cmd", "--no-cwd"],
+        snapshot: snapshot,
+        interactiveTTY: false
+    )
+
+    #expect(result.exitCode == CLIExitCode.success.rawValue)
+    #expect(result.stdout.contains("PORT"))
+    #expect(result.stdout.contains("PROC"))
+    #expect(result.stdout.contains("node"))
+    #expect(result.stdout.contains("postgres"))
+}
+
+@Test func listCommandJsonOutputMatchesMachineContract() throws {
+    let snapshot = ListenerSnapshot(
+        generatedAt: Date(timeIntervalSince1970: 1_741_052_800),
+        listeners: [
+            makeListener(
+                port: 8080,
+                bindAddress: "127.0.0.1",
+                family: .ipv4,
+                pid: 777,
+                processName: "api",
+                commandLine: nil,
+                cwd: nil,
+                cpuPercent: nil,
+                memBytes: nil,
+                requiresAdminToKill: nil
+            )
+        ]
+    )
+
+    let result = runCLI(
+        arguments: ["harbor", "list", "--json"],
+        snapshot: snapshot,
+        interactiveTTY: false
+    )
+
+    #expect(result.exitCode == CLIExitCode.success.rawValue)
+    let payload = try #require(
+        JSONSerialization.jsonObject(with: Data(result.stdout.utf8), options: []) as? [String: Any]
+    )
+    #expect(payload["schemaVersion"] as? Int == 1)
+    let listeners = try #require(payload["listeners"] as? [[String: Any]])
+    #expect(listeners.count == 1)
+    #expect(listeners[0]["port"] as? Int == 8080)
+    #expect(listeners[0]["processName"] as? String == "api")
+    #expect(listeners[0]["commandLine"] is NSNull)
+}
+
+@Test func whoCommandJsonFiltersPortRows() throws {
+    let snapshot = ListenerSnapshot(
+        generatedAt: Date(),
+        listeners: [
+            makeListener(port: 3000, bindAddress: "*", family: .ipv4, pid: 10, processName: "web"),
+            makeListener(port: 3000, bindAddress: "::1", family: .ipv6, pid: 10, processName: "web"),
+            makeListener(port: 5432, bindAddress: "127.0.0.1", family: .ipv4, pid: 20, processName: "postgres")
+        ]
+    )
+
+    let result = runCLI(
+        arguments: ["harbor", "who", "3000", "--json"],
+        snapshot: snapshot,
+        interactiveTTY: false
+    )
+
+    #expect(result.exitCode == CLIExitCode.success.rawValue)
+    let payload = try #require(
+        JSONSerialization.jsonObject(with: Data(result.stdout.utf8), options: []) as? [String: Any]
+    )
+    let listeners = try #require(payload["listeners"] as? [[String: Any]])
+    #expect(listeners.count == 2)
+    #expect(listeners.allSatisfy { ($0["port"] as? Int) == 3000 })
+}
+
 @Test func sinkReturnsFreePortCodeWhenNoListenersMatch() {
     let snapshot = ListenerSnapshot(
         generatedAt: Date(),
@@ -337,11 +421,75 @@ import Testing
     #expect(result.stderr.contains("will not escalate privileges"))
 }
 
+@Test func sinkReturnsRequiresAdminWhenResolverRejectsSignal() {
+    let snapshot = ListenerSnapshot(
+        generatedAt: Date(),
+        listeners: [
+            makeListener(
+                port: 3000,
+                bindAddress: "127.0.0.1",
+                family: .ipv4,
+                pid: 301,
+                processName: "owned",
+                requiresAdminToKill: false
+            )
+        ]
+    )
+
+    let result = runCLI(
+        arguments: ["harbor", "sink", "3000", "--yes"],
+        snapshot: snapshot,
+        sinkResult: .requiresAdmin,
+        interactiveTTY: false
+    )
+
+    #expect(result.exitCode == CLIExitCode.requiresAdmin.rawValue)
+    #expect(result.sinkCalls.count == 1)
+    #expect(result.stderr.contains("will not escalate privileges"))
+}
+
+@Test func watchCommandHonorsIntervalCadenceUntilProviderFails() {
+    let snapshot = ListenerSnapshot(
+        generatedAt: Date(),
+        listeners: [makeListener(port: 3000, bindAddress: "*", family: .ipv4, pid: 42, processName: "node")]
+    )
+    let provider = FailingSnapshotProvider(
+        snapshotsBeforeFailure: [snapshot, snapshot],
+        failure: WatchSnapshotFailure.stop
+    )
+    let sleeps = SleepRecorder()
+
+    let result = runCLIWithProviders(
+        arguments: ["harbor", "watch", "--interval", "1.5", "--jsonl"],
+        interactiveTTY: false,
+        inputLines: [],
+        sleep: { interval in
+            sleeps.record(interval)
+        },
+        snapshotProvider: {
+            try provider.next()
+        },
+        sinkProvider: { _, _ in
+            .terminated
+        }
+    )
+
+    #expect(result.exitCode == CLIExitCode.runtimeFailure.rawValue)
+    #expect(result.sleepCalls == [1.5, 1.5])
+    #expect(result.stdout.split(whereSeparator: \.isNewline).count == 2)
+    #expect(result.stderr.contains("Failed to scan listeners"))
+}
+
+private enum WatchSnapshotFailure: Error {
+    case stop
+}
+
 private struct CLIExecutionResult {
     let exitCode: Int
     let stdout: String
     let stderr: String
     let sinkCalls: [(Int, SinkSignal)]
+    let sleepCalls: [TimeInterval]
 }
 
 private func runCLI(
@@ -351,10 +499,29 @@ private func runCLI(
     interactiveTTY: Bool,
     inputLines: [String] = []
 ) -> CLIExecutionResult {
+    runCLIWithProviders(
+        arguments: arguments,
+        interactiveTTY: interactiveTTY,
+        inputLines: inputLines,
+        sleep: { _ in },
+        snapshotProvider: { snapshot },
+        sinkProvider: { _, _ in sinkResult }
+    )
+}
+
+private func runCLIWithProviders(
+    arguments: [String],
+    interactiveTTY: Bool,
+    inputLines: [String],
+    sleep: @escaping @Sendable (TimeInterval) -> Void,
+    snapshotProvider: @escaping @Sendable () throws -> ListenerSnapshot,
+    sinkProvider: @escaping @Sendable (_ pid: Int, _ signal: SinkSignal) -> SinkResult
+) -> CLIExecutionResult {
     let outputPipe = Pipe()
     let errorPipe = Pipe()
 
-    let sinkCallRecorder = SinkCallRecorder(result: sinkResult)
+    let sinkCallRecorder = SinkCallRecorder(sinkProvider: sinkProvider)
+    let sleepRecorder = SleepRecorder()
     let inputFeed = InputFeed(lines: inputLines)
 
     let cli = HarborCLI(
@@ -362,10 +529,13 @@ private func runCLI(
         stdout: outputPipe.fileHandleForWriting,
         stderr: errorPipe.fileHandleForWriting,
         terminalWidthProvider: { 120 },
-        sleep: { _ in },
+        sleep: { interval in
+            sleepRecorder.record(interval)
+            sleep(interval)
+        },
         isInteractiveTTYProvider: { interactiveTTY },
         readInputLine: { inputFeed.read() },
-        snapshotProvider: { snapshot },
+        snapshotProvider: snapshotProvider,
         sinkProvider: { pid, signal in
             sinkCallRecorder.call(pid: pid, signal: signal)
         }
@@ -383,21 +553,22 @@ private func runCLI(
         exitCode: exitCode,
         stdout: standardOutput,
         stderr: standardError,
-        sinkCalls: sinkCallRecorder.calls
+        sinkCalls: sinkCallRecorder.calls,
+        sleepCalls: sleepRecorder.calls
     )
 }
 
 private final class SinkCallRecorder: @unchecked Sendable {
-    private let result: SinkResult
+    private let sinkProvider: @Sendable (_ pid: Int, _ signal: SinkSignal) -> SinkResult
     private(set) var calls: [(Int, SinkSignal)] = []
 
-    init(result: SinkResult) {
-        self.result = result
+    init(sinkProvider: @escaping @Sendable (_ pid: Int, _ signal: SinkSignal) -> SinkResult) {
+        self.sinkProvider = sinkProvider
     }
 
     func call(pid: Int, signal: SinkSignal) -> SinkResult {
         calls.append((pid, signal))
-        return result
+        return sinkProvider(pid, signal)
     }
 }
 
@@ -414,6 +585,32 @@ private final class InputFeed: @unchecked Sendable {
         }
 
         return lines.removeFirst()
+    }
+}
+
+private final class SleepRecorder: @unchecked Sendable {
+    private(set) var calls: [TimeInterval] = []
+
+    func record(_ interval: TimeInterval) {
+        calls.append(interval)
+    }
+}
+
+private final class FailingSnapshotProvider: @unchecked Sendable {
+    private var snapshots: [ListenerSnapshot]
+    private let failure: Error
+
+    init(snapshotsBeforeFailure: [ListenerSnapshot], failure: Error) {
+        self.snapshots = snapshotsBeforeFailure
+        self.failure = failure
+    }
+
+    func next() throws -> ListenerSnapshot {
+        guard !snapshots.isEmpty else {
+            throw failure
+        }
+
+        return snapshots.removeFirst()
     }
 }
 

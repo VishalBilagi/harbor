@@ -58,7 +58,7 @@ struct ListenerRow: Identifiable, Equatable {
         }
 
         if let memBytes {
-            parts.append("MEM \(Self.memoryFormatter.string(fromByteCount: Int64(memBytes)))")
+            parts.append("MEM \(Self.formatMemory(memBytes))")
         }
 
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -170,13 +170,13 @@ struct ListenerRow: Identifiable, Equatable {
         return "~/" + path.dropFirst(homePrefix.count)
     }
 
-    private static let memoryFormatter: ByteCountFormatter = {
+    private nonisolated static func formatMemory(_ memBytes: UInt64) -> String {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .memory
         formatter.includesUnit = true
         formatter.includesCount = true
         formatter.isAdaptive = true
-        return formatter
-    }()
+        return formatter.string(fromByteCount: Int64(memBytes))
+    }
 }

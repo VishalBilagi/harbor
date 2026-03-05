@@ -118,6 +118,35 @@ import Testing
     #expect(listener.requiresAdminToKill == true)
 }
 
+@Test func resolverTreatsCommandLineAndCwdAsBestEffortMetadata() {
+    let pid: Int32 = 91
+    let provider = StubProcessInformationProvider()
+    provider.snapshots[pid] = [
+        ProcessSnapshot(
+            uid: 501,
+            startTimeMicros: 777,
+            residentMemoryBytes: 4096,
+            totalCPUTimeNanos: 9_000
+        )
+    ]
+    provider.commandLineSequences[pid] = [nil]
+    provider.cwdSequences[pid] = [nil]
+
+    let resolver = ProcessMetadataResolver(
+        processInformationProvider: provider,
+        currentUIDProvider: { 501 },
+        uptimeNanosecondsProvider: { 99_000 },
+        signalCall: { _, _ in .success }
+    )
+
+    let listener = resolver.enrich([makeListener(pid: Int(pid), processName: "unknown")])[0]
+    #expect(listener.commandLine == nil)
+    #expect(listener.cwd == nil)
+    #expect(listener.memBytes == 4096)
+    #expect(listener.cpuPercent == nil)
+    #expect(listener.requiresAdminToKill == false)
+}
+
 @Test func sinkUsesOwnershipChecksAndReturnsExpectedStates() {
     let currentUID: uid_t = 501
 
@@ -141,6 +170,28 @@ import Testing
         #expect(signalCall.calls.count == 1)
         #expect(signalCall.calls[0].0 == pid)
         #expect(signalCall.calls[0].1 == SIGTERM)
+    }
+
+    do {
+        let provider = StubProcessInformationProvider()
+        let signalCall = StubSignalCall(responses: [.success])
+        let pid: Int32 = 1550
+        provider.snapshots[pid] = [
+            ProcessSnapshot(uid: currentUID, startTimeMicros: 1, residentMemoryBytes: nil, totalCPUTimeNanos: nil)
+        ]
+
+        let resolver = ProcessMetadataResolver(
+            processInformationProvider: provider,
+            currentUIDProvider: { currentUID },
+            uptimeNanosecondsProvider: { 0 },
+            signalCall: signalCall.call(pid:signal:)
+        )
+
+        let result = resolver.sink(pid: Int(pid), signal: .kill)
+        #expect(result == .terminated)
+        #expect(signalCall.calls.count == 1)
+        #expect(signalCall.calls[0].0 == pid)
+        #expect(signalCall.calls[0].1 == SIGKILL)
     }
 
     do {
@@ -205,6 +256,28 @@ import Testing
         }
 
         #expect(message.contains("errno \(EBUSY)"))
+        #expect(signalCall.calls.count == 1)
+        #expect(signalCall.calls[0].0 == pid)
+        #expect(signalCall.calls[0].1 == SIGTERM)
+    }
+
+    do {
+        let provider = StubProcessInformationProvider()
+        let signalCall = StubSignalCall(responses: [.failure(errno: EPERM)])
+        let pid: Int32 = 1850
+        provider.snapshots[pid] = [
+            ProcessSnapshot(uid: currentUID, startTimeMicros: 1, residentMemoryBytes: nil, totalCPUTimeNanos: nil)
+        ]
+
+        let resolver = ProcessMetadataResolver(
+            processInformationProvider: provider,
+            currentUIDProvider: { currentUID },
+            uptimeNanosecondsProvider: { 0 },
+            signalCall: signalCall.call(pid:signal:)
+        )
+
+        let result = resolver.sink(pid: Int(pid), signal: .term)
+        #expect(result == .requiresAdmin)
         #expect(signalCall.calls.count == 1)
         #expect(signalCall.calls[0].0 == pid)
         #expect(signalCall.calls[0].1 == SIGTERM)

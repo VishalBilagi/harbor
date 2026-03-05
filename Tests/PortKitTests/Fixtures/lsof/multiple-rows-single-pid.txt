@@ -1,0 +1,17 @@
+p501
+cpython
+f3
+Ptcp
+tIPv4
+n127.0.0.1:5000
+TST=LISTEN
+f4
+Ptcp
+tIPv6
+n[::1]:5000
+TST=LISTEN
+f5
+Ptcp
+tIPv4
+n0.0.0.0:8000
+TST=LISTEN

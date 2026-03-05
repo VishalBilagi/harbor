@@ -6,6 +6,9 @@ import Testing
     let wildcard = try #require(ListenerEndpointParser.parse("*:3000"))
     #expect(wildcard == ListenerEndpoint(bindAddress: "*", port: 3000))
 
+    let localhost = try #require(ListenerEndpointParser.parse("localhost:8080"))
+    #expect(localhost == ListenerEndpoint(bindAddress: "localhost", port: 8080))
+
     let ipv4 = try #require(ListenerEndpointParser.parse("127.0.0.1:3000"))
     #expect(ipv4 == ListenerEndpoint(bindAddress: "127.0.0.1", port: 3000))
 
@@ -14,44 +17,7 @@ import Testing
 }
 
 @Test func scannerParsesFiltersAndSortsListenerRows() throws {
-    let fixture = """
-    p42
-    cweb
-    f5
-    Ptcp
-    tIPv6
-    n[::1]:9000
-    TST=LISTEN
-    f6
-    Pudp
-    tIPv4
-    n127.0.0.1:9000
-    TST=LISTEN
-    f7
-    Ptcp
-    tIPv4
-    n127.0.0.1:9000->127.0.0.1:53412
-    TST=ESTABLISHED
-    p11
-    cpostgres
-    f8
-    Ptcp
-    tIPv6
-    n[::1]:5432
-    TST=LISTEN
-    f9
-    Ptcp
-    tIPv4
-    n127.0.0.1:5432
-    TST=LISTEN
-    p7
-    cnode
-    f3
-    Ptcp
-    tIPv4
-    n*:3000
-    TST=LISTEN
-    """
+    let fixture = try fixture(named: "common-listeners.txt")
 
     let scanner = LsofListenerScanner(runCommand: { executablePath, arguments in
         #expect(executablePath == "/usr/sbin/lsof")
@@ -66,12 +32,46 @@ import Testing
 
     let listeners = try scanner.scan()
 
-    #expect(listeners.map(\.port) == [3000, 5432, 5432, 9000])
-    #expect(listeners.map(\.pid) == [7, 11, 11, 42])
-    #expect(listeners.map(\.family) == [.ipv4, .ipv4, .ipv6, .ipv6])
-    #expect(listeners.map(\.bindAddress) == ["*", "127.0.0.1", "::1", "::1"])
-    #expect(listeners.map(\.processName) == ["node", "postgres", "postgres", "web"])
+    #expect(listeners.map(\.port) == [3000, 5432, 5432, 8080, 9222, 9222])
+    #expect(listeners.map(\.pid) == [88, 111, 111, 47, 312, 312])
+    #expect(listeners.map(\.family) == [.ipv4, .ipv4, .ipv6, .ipv4, .ipv4, .ipv6])
+    #expect(listeners.map(\.bindAddress) == ["*", "127.0.0.1", "::1", "localhost", "127.0.0.1", "::1"])
+    #expect(listeners.map(\.processName) == ["node", "postgres", "postgres", "devserver", "Google Chrome", "Google Chrome"])
     #expect(listeners.allSatisfy { $0.proto == .tcp })
+}
+
+@Test func scannerParsesMultipleRowsForSinglePIDFromFixture() throws {
+    let fixture = try fixture(named: "multiple-rows-single-pid.txt")
+    let scanner = LsofListenerScanner(runCommand: { _, _ in
+        CommandResult(
+            standardOutput: Data(fixture.utf8),
+            standardError: Data(),
+            terminationStatus: 0
+        )
+    })
+
+    let listeners = try scanner.scan()
+    #expect(listeners.count == 3)
+    #expect(listeners.map(\.pid) == [501, 501, 501])
+    #expect(listeners.map(\.port) == [5000, 5000, 8000])
+    #expect(listeners.map(\.bindAddress) == ["127.0.0.1", "::1", "0.0.0.0"])
+}
+
+@Test func scannerDropsNoisyRowsFromFixture() throws {
+    let fixture = try fixture(named: "restricted-and-noisy.txt")
+    let scanner = LsofListenerScanner(runCommand: { _, _ in
+        CommandResult(
+            standardOutput: Data(fixture.utf8),
+            standardError: Data(),
+            terminationStatus: 0
+        )
+    })
+
+    let listeners = try scanner.scan()
+    #expect(listeners.count == 1)
+    #expect(listeners[0].pid == 700)
+    #expect(listeners[0].port == 8443)
+    #expect(listeners[0].processName == "rootd")
 }
 
 @Test func scannerDropsRowsMissingProtocolField() throws {
@@ -172,4 +172,15 @@ import Testing
     #expect(snapshot.schemaVersion == 1)
     #expect(snapshot.generatedAt == generatedAt)
     #expect(snapshot.listeners.map(\.port) == [3000, 8080])
+}
+
+private func fixture(named name: String) throws -> String {
+    let testsDirectory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+    let fixtureURL = testsDirectory
+        .appendingPathComponent("Fixtures")
+        .appendingPathComponent("lsof")
+        .appendingPathComponent(name)
+
+    return try String(contentsOf: fixtureURL, encoding: .utf8)
 }
