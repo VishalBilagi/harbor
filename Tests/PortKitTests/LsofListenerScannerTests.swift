@@ -96,6 +96,58 @@ import Testing
     #expect(listeners.isEmpty)
 }
 
+@Test func scannerAcceptsStatusOneWhenOutputIsPresent() throws {
+    let fixture = """
+    p42
+    cweb
+    f5
+    Ptcp
+    tIPv4
+    n127.0.0.1:9000
+    TST=LISTEN
+    """
+
+    let scanner = LsofListenerScanner(runCommand: { _, _ in
+        CommandResult(
+            standardOutput: Data(fixture.utf8),
+            standardError: Data("lsof: can't find PID 42's byte count: Operation not permitted".utf8),
+            terminationStatus: 1
+        )
+    })
+
+    let listeners = try scanner.scan()
+    #expect(listeners.count == 1)
+    #expect(listeners[0].pid == 42)
+    #expect(listeners[0].port == 9000)
+}
+
+@Test func scannerTreatsStatusOneWithoutOutputAsEmptyResult() throws {
+    let scanner = LsofListenerScanner(runCommand: { _, _ in
+        CommandResult(
+            standardOutput: Data(),
+            standardError: Data(),
+            terminationStatus: 1
+        )
+    })
+
+    let listeners = try scanner.scan()
+    #expect(listeners.isEmpty)
+}
+
+@Test func scannerThrowsOnUnexpectedStatusOneFailure() {
+    let scanner = LsofListenerScanner(runCommand: { _, _ in
+        CommandResult(
+            standardOutput: Data(),
+            standardError: Data("lsof: catastrophic failure".utf8),
+            terminationStatus: 1
+        )
+    })
+
+    #expect(throws: PortKitError.self) {
+        _ = try scanner.scan()
+    }
+}
+
 @Test func snapshotBuilderPinsSchemaVersionAndOrdering() {
     let latePort = Listener(
         proto: .tcp,

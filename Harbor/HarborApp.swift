@@ -9,19 +9,21 @@ import SwiftUI
 
 @main
 struct HarborApp: App {
+    @StateObject private var model = HarborMenuModel()
+    @AppStorage(AppSettings.refreshIntervalKey)
+    private var refreshIntervalSeconds = AppSettings.defaultRefreshIntervalSeconds
+
     var body: some Scene {
-        MenuBarExtra("Harbor", systemImage: "ferry") {
-            ContentView()
+        MenuBarExtra("Harbor", systemImage: "ferry.fill") {
+            ContentView(
+                model: model,
+                refreshIntervalSeconds: $refreshIntervalSeconds
+            )
         }
+        .menuBarExtraStyle(.window)
+
         Settings {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Harbor")
-                    .font(.headline)
-                Text("Menubar settings and refresh controls will be added in HAR-7.")
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-            .frame(width: 320)
+            HarborSettingsView(refreshIntervalSeconds: $refreshIntervalSeconds)
         }
     }
 }

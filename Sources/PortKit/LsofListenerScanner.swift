@@ -42,17 +42,26 @@ public struct LsofListenerScanner: Sendable {
     public func scan() throws -> [Listener] {
         let result = try runCommand(Self.executablePath, Self.arguments)
 
-        guard result.terminationStatus == 0 else {
-            let standardError = String(decoding: result.standardError, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            throw PortKitError.scannerFailed(status: result.terminationStatus, standardError: standardError)
-        }
-
         guard let output = String(data: result.standardOutput, encoding: .utf8) else {
             throw PortKitError.invalidScannerOutput
         }
 
-        return LsofOutputParser().parse(output)
+        let listeners = LsofOutputParser().parse(output)
+        if result.terminationStatus == 0 {
+            return listeners
+        }
+
+        let standardError = String(decoding: result.standardError, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.isNonFatalExit(
+            status: result.terminationStatus,
+            standardError: standardError,
+            parsedListeners: listeners
+        ) {
+            return listeners
+        }
+
+        throw PortKitError.scannerFailed(status: result.terminationStatus, standardError: standardError)
     }
 
     private static func runCommand(executablePath: String, arguments: [String]) throws -> CommandResult {
@@ -78,6 +87,33 @@ public struct LsofListenerScanner: Sendable {
             standardError: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
             terminationStatus: process.terminationStatus
         )
+    }
+
+    private static func isNonFatalExit(status: Int32, standardError: String, parsedListeners: [Listener]) -> Bool {
+        guard status == 1 else {
+            return false
+        }
+
+        if !parsedListeners.isEmpty || standardError.isEmpty {
+            return true
+        }
+
+        let diagnostics = standardError
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
+        guard !diagnostics.isEmpty else {
+            return true
+        }
+
+        return diagnostics.allSatisfy { line in
+            line.contains("operation not permitted")
+                || line.contains("permission denied")
+                || line.contains("can't find pid")
+                || line.contains("can't stat(")
+                || line.contains("can't readlink")
+        }
     }
 }
 
