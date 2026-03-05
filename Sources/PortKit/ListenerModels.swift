@@ -78,3 +78,15 @@ public struct ListenerSnapshot: Codable, Sendable, Equatable {
         self.listeners = listeners.sorted()
     }
 }
+
+public enum SinkSignal: String, Codable, Sendable {
+    case term
+    case kill
+}
+
+public enum SinkResult: Codable, Sendable, Equatable {
+    case terminated
+    case notFound
+    case requiresAdmin
+    case systemError(String)
+}
