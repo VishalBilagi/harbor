@@ -79,7 +79,7 @@ public struct ListenerSnapshot: Codable, Sendable, Equatable {
     }
 }
 
-public enum SinkSignal: String, Codable, Sendable {
+public enum SinkSignal: String, Codable, Sendable, Equatable {
     case term
     case kill
 }
