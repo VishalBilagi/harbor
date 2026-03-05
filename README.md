@@ -38,6 +38,21 @@ cd HarborTUI
 go build ./...
 ```
 
+```sh
+cd HarborTUI
+go run ./cmd/harbor-tui --interval 2
+```
+
+TUI controls:
+
+- `/` focus filter
+- `Enter` open details
+- `Esc` clear focus/filter or close details
+- `k` confirm SIGTERM for selected PID
+- `K` confirm SIGKILL for selected PID
+- `r` reconnect data source (stream first, polling fallback)
+- `q` quit
+
 ## Notes
 
 - `PortKit` is the shared source of truth for listener discovery and process metadata.
