@@ -57,6 +57,9 @@ struct ContentView: View {
         }
         .padding(12)
         .frame(width: 680, height: 520)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .onAppear {
             model.refresh(for: .menuOpen)
         }
@@ -108,17 +111,11 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
             .buttonBorderShape(.roundedRectangle(radius: 8))
-            .disabled(model.isRefreshing)
 
             SettingsLink {
                 Image(systemName: "gearshape")
             }
             .buttonStyle(.borderless)
-
-            if model.isRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-            }
         }
     }
 
@@ -195,6 +192,11 @@ struct ContentView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            Button("Quit") {
+                NSApp.terminate(nil)
+            }
+            .buttonStyle(.bordered)
+            .font(.caption2)
         }
     }
 
@@ -262,11 +264,8 @@ private struct ListenerRowView: View {
 
             tickerRow
 
-            if densityMode == .comfortable, let statsText = row.statsText {
-                Text(statsText)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+            if densityMode == .comfortable {
+                usageStatsRow
             }
 
             HStack(spacing: actionSpacing) {
@@ -387,6 +386,35 @@ private struct ListenerRowView: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+        }
+    }
+
+    @ViewBuilder
+    private var usageStatsRow: some View {
+        if row.cpuUsageText != nil || row.memoryUsageText != nil {
+            HStack(spacing: 8) {
+                if let cpuUsageText = row.cpuUsageText {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                        Text(cpuUsageText)
+                    }
+                }
+
+                if row.cpuUsageText != nil && row.memoryUsageText != nil {
+                    Text("•")
+                }
+
+                if let memoryUsageText = row.memoryUsageText {
+                    HStack(spacing: 4) {
+                        Image(systemName: "memorychip")
+                        Text(memoryUsageText)
+                    }
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.tail)
         }
     }
 

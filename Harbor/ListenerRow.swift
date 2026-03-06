@@ -86,17 +86,25 @@ struct ListenerRow: Identifiable, Equatable {
     var statsText: String? {
         var parts: [String] = []
 
-        if let cpuPercent {
-            parts.append(
-                "CPU \(cpuPercent.formatted(.number.precision(.fractionLength(1))))%"
-            )
+        if let cpuUsageText {
+            parts.append("CPU \(cpuUsageText)")
         }
 
-        if let memBytes {
-            parts.append("MEM \(Self.formatMemory(memBytes))")
+        if let memoryUsageText {
+            parts.append("MEM \(memoryUsageText)")
         }
 
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    var cpuUsageText: String? {
+        cpuPercent.map { value in
+            "\(value.formatted(.number.precision(.fractionLength(1))))%"
+        }
+    }
+
+    var memoryUsageText: String? {
+        memBytes.map(Self.formatMemory)
     }
 
     func matches(query: String) -> Bool {
