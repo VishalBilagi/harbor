@@ -41,8 +41,13 @@ struct SinkOptions: Equatable {
     let assumeYes: Bool
 }
 
+enum HarborBuildInfo {
+    static let version = "0.1.0" /* x-release-please-version */
+}
+
 enum HarborCommand: Equatable {
     case help
+    case version(json: Bool)
     case list(display: ListDisplayOptions, json: Bool)
     case who(port: Int, display: ListDisplayOptions, json: Bool)
     case watch(interval: TimeInterval, jsonl: Bool)
@@ -60,6 +65,10 @@ enum HarborCLIParser {
         switch first {
         case "help", "-h", "--help":
             return .help
+        case "version":
+            return try parseVersion(arguments: Array(args.dropFirst()))
+        case "--version":
+            return .version(json: false)
         case "list", "ls":
             return try parseList(arguments: Array(args.dropFirst()))
         case "who":
@@ -169,6 +178,23 @@ enum HarborCLIParser {
         }
 
         return .watch(interval: interval, jsonl: jsonl)
+    }
+
+    private static func parseVersion(arguments: [String]) throws -> HarborCommand {
+        var json = false
+
+        for argument in arguments {
+            switch argument {
+            case "--json":
+                json = true
+            case "-h", "--help":
+                return .help
+            default:
+                throw CLIParseError.message("Unknown option '\(argument)' for 'version'.")
+            }
+        }
+
+        return .version(json: json)
     }
 
     private static func parseSink(arguments: [String]) throws -> HarborCommand {
@@ -454,6 +480,8 @@ struct HarborCLI {
         case .help:
             write("\(Usage.text)\n", to: stdout)
             return CLIExitCode.success.rawValue
+        case let .version(json):
+            return runVersion(json: json)
         case let .list(display, json):
             return try runList(display: display, json: json)
         case let .who(port, display, json):
@@ -463,6 +491,16 @@ struct HarborCLI {
         case let .sink(options):
             return try runSink(options: options)
         }
+    }
+
+    private func runVersion(json: Bool) -> Int {
+        if json {
+            write("{\"version\":\"\(HarborBuildInfo.version)\"}\n", to: stdout)
+        } else {
+            write("\(HarborBuildInfo.version)\n", to: stdout)
+        }
+
+        return CLIExitCode.success.rawValue
     }
 
     private func runList(display: ListDisplayOptions, json: Bool) throws -> Int {
@@ -977,6 +1015,8 @@ enum TerminalInteractivityDetector {
 enum Usage {
     static let text = """
     Usage:
+      harbor version [--json]
+      harbor --version
       harbor list [--json] [--wide] [--no-cmd] [--no-cwd]
       harbor who <port> [--json] [--wide] [--no-cmd] [--no-cwd]
       harbor watch [--interval <seconds>] --jsonl
@@ -984,12 +1024,14 @@ enum Usage {
       harbor sink --pid <pid> [--force] [--yes]
 
     Commands:
+      version     Show Harbor CLI version.
       list        Show active TCP listeners.
       who         Filter listeners by port.
       watch       Stream snapshots continuously as JSONL.
       sink        Signal a listener process by port or pid.
 
     Notes:
+      '--version' is a hidden alias for 'version'.
       'ls' is a hidden alias for 'list'.
       'kill' is a hidden alias for 'sink'.
     """

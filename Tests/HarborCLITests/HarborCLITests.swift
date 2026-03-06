@@ -20,6 +20,14 @@ import Testing
     )
 }
 
+@Test func parserParsesVersionCommandAndFlagAlias() throws {
+    let command = try HarborCLIParser.parse(arguments: ["harbor", "version", "--json"])
+    #expect(command == .version(json: true))
+
+    let aliasCommand = try HarborCLIParser.parse(arguments: ["harbor", "--version"])
+    #expect(aliasCommand == .version(json: false))
+}
+
 @Test func parserParsesWhoCommandWithJsonFlag() throws {
     let command = try HarborCLIParser.parse(arguments: ["harbor", "who", "3000", "--json"])
 
@@ -206,6 +214,28 @@ import Testing
     #expect(object["cpuPercent"] is NSNull)
     #expect(object["memBytes"] is NSNull)
     #expect(object["requiresAdminToKill"] is NSNull)
+}
+
+@Test func versionCommandRendersPlainAndJSONOutput() throws {
+    let plain = runCLI(
+        arguments: ["harbor", "version"],
+        snapshot: ListenerSnapshot(generatedAt: Date(), listeners: []),
+        interactiveTTY: false
+    )
+    #expect(plain.exitCode == CLIExitCode.success.rawValue)
+    #expect(plain.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == HarborBuildInfo.version)
+
+    let json = runCLI(
+        arguments: ["harbor", "version", "--json"],
+        snapshot: ListenerSnapshot(generatedAt: Date(), listeners: []),
+        interactiveTTY: false
+    )
+    #expect(json.exitCode == CLIExitCode.success.rawValue)
+
+    let payload = try #require(
+        JSONSerialization.jsonObject(with: Data(json.stdout.utf8), options: []) as? [String: Any]
+    )
+    #expect(payload["version"] as? String == HarborBuildInfo.version)
 }
 
 @Test func listCommandRendersHumanOutputTable() {
