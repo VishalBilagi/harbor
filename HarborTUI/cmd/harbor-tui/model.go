@@ -29,7 +29,6 @@ type tuiStyles struct {
 	headerBar         lipgloss.Style
 	headerBadge       lipgloss.Style
 	headerMeta        lipgloss.Style
-	streamLive        lipgloss.Style
 	streamWarning     lipgloss.Style
 	streamError       lipgloss.Style
 	filterLabel       lipgloss.Style
@@ -76,10 +75,6 @@ var styles = tuiStyles{
 		Background(lipgloss.Color("#10293A")).
 		Padding(0, 1),
 	headerMeta: lipgloss.NewStyle().Foreground(lipgloss.Color("#A9B8D0")),
-	streamLive: lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8AE38A")).
-		Background(lipgloss.Color("#17381F")).
-		Padding(0, 1),
 	streamWarning: lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#F0C674")).
 		Background(lipgloss.Color("#3A2C12")).
@@ -663,16 +658,14 @@ func (m model) renderHeader() string {
 		}
 	}
 
-	streamBadge := m.streamStateBadge()
 	left := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		styles.headerBadge.Render("HARBOR"),
-		styles.headerMeta.Render("terminal ops"),
 	)
 	right := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		streamBadge,
 		styles.headerMeta.Render(fmt.Sprintf("listeners %d/%d", len(m.visible), len(m.listeners))),
+		" ",
 		ageText,
 	)
 	line := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
@@ -742,45 +735,6 @@ func (m model) snapshotAge() time.Duration {
 	return age
 }
 
-func (m model) streamStateBadge() string {
-	label := "● reconnecting"
-	style := styles.streamWarning
-	age := m.snapshotAge()
-
-	switch m.mode {
-	case dataModeStreaming:
-		switch {
-		case m.backendError:
-			label = "● stream error"
-			style = styles.streamError
-		case !m.lastSnapshot.IsZero() && age >= 20*time.Second:
-			label = "● stream stale"
-			style = styles.streamWarning
-		default:
-			label = "● stream live"
-			style = styles.streamLive
-		}
-	case dataModePolling:
-		if m.backendError {
-			label = "● polling error"
-			style = styles.streamError
-		} else {
-			label = "● polling fallback"
-			style = styles.streamWarning
-		}
-	case dataModeConnecting:
-		label = "● reconnecting"
-		style = styles.streamWarning
-	default:
-		if m.backendError {
-			label = "● stream error"
-			style = styles.streamError
-		}
-	}
-
-	return style.Render(label)
-}
-
 func (m *model) tableWindow(maxRows int) (int, int) {
 	if maxRows <= 0 {
 		maxRows = 1
@@ -848,20 +802,38 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 		return []string{styles.muted.Render("No listeners match the current filter.")}
 	}
 
-	if maxRows < 2 {
-		maxRows = 2
+	if maxRows < 3 {
+		maxRows = 3
 	}
 
 	lines := make([]string, 0, maxRows)
-	showControls := maxRows >= 5
+	showControls := maxRows >= 6
 	if showControls {
 		lines = append(lines, m.renderListControlChips(contentWidth))
 	}
 
 	availableLines := maxRows - len(lines)
-	rowSlots := availableLines / 2
+	showHeader := availableLines >= 2
+	rowSlots := availableLines
+	if showHeader {
+		rowSlots--
+	}
 	if rowSlots < 1 {
 		rowSlots = 1
+	}
+
+	widths := computeListColumnWidths(contentWidth)
+	if showHeader {
+		header := "  " + renderListTableLine(
+			widths,
+			"PORT",
+			"PROCESS",
+			"PID",
+			"FAMILY",
+			"BIND",
+			"ACCESS",
+		)
+		lines = append(lines, truncate(styles.filterLabel.Render(header), contentWidth))
 	}
 
 	mutable := m
@@ -869,55 +841,34 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 	rows := mutable.visible[start:end]
 
 	for index, row := range rows {
-		if len(lines)+2 > maxRows {
+		if len(lines)+1 > maxRows {
 			break
 		}
 
 		absoluteIndex := start + index
 		selected := absoluteIndex == m.selected
 
-		portStyle := styles.portBadge
-		processStyle := styles.process
-		pidStyle := styles.pid
-		if selected {
-			portStyle = styles.portBadgeSelected
-			processStyle = styles.processSelected
-			pidStyle = styles.pidSelected
-		}
-
-		processName := valueOrDash(row.ProcessName)
-		primary := lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			portStyle.Render(strconv.Itoa(row.Port)),
-			processStyle.Render(processName),
-			styles.muted.Render("⋅"),
-			styles.tagFamily.Render(listenerFamily(row)),
-			pidStyle.Render(fmt.Sprintf("pid %d", row.PID)),
-		)
+		bind := listBindValue(row.BindAddress)
+		access := styles.detailSafe.Render("user")
 		if listenerRequiresAdmin(row) {
-			primary = lipgloss.JoinHorizontal(lipgloss.Top, primary, styles.tagProtected.Render("admin"))
+			access = styles.detailDanger.Render("admin")
 		}
-
-		bindChip := styles.tagNeutral.Render("bind " + valueOrDash(row.BindAddress))
-		switch bindClassification(row.BindAddress) {
-		case "wildcard":
-			bindChip = styles.tagWildcard.Render("⚠ wildcard " + valueOrDash(row.BindAddress))
-		case "localhost":
-			bindChip = styles.tagLocalhost.Render("localhost " + valueOrDash(row.BindAddress))
-		}
-		meta := lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			bindChip,
+		rowLine := renderListTableLine(
+			widths,
+			strconv.Itoa(row.Port),
+			valueOrDash(row.ProcessName),
+			strconv.Itoa(row.PID),
+			listenerFamily(row),
+			bind,
+			access,
 		)
 
 		if selected {
 			selectedLineStyle := styles.rowSelected.Width(contentWidth)
-			lines = append(lines, selectedLineStyle.Render(truncate("▌ "+primary, contentWidth)))
-			lines = append(lines, selectedLineStyle.Render(truncate("  "+meta, contentWidth)))
+			lines = append(lines, selectedLineStyle.Render(pad(truncate("▌ "+rowLine, contentWidth), contentWidth)))
 			continue
 		}
-		lines = append(lines, "  "+primary)
-		lines = append(lines, "  "+styles.muted.Render(meta))
+		lines = append(lines, truncate("  "+rowLine, contentWidth))
 	}
 
 	if len(m.visible) > len(rows) && len(lines) < maxRows {
@@ -929,6 +880,79 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 	}
 
 	return lines
+}
+
+type listColumnWidths struct {
+	port    int
+	process int
+	pid     int
+	family  int
+	bind    int
+	access  int
+}
+
+func computeListColumnWidths(contentWidth int) listColumnWidths {
+	usable := contentWidth - 2
+	if usable < 20 {
+		usable = 20
+	}
+
+	widths := listColumnWidths{
+		port:   5,
+		pid:    7,
+		family: 6,
+		access: 6,
+	}
+
+	const gaps = 5
+	remaining := usable - widths.port - widths.pid - widths.family - widths.access - gaps
+	if remaining < 2 {
+		remaining = 2
+	}
+
+	if remaining >= 18 {
+		widths.process = remaining * 3 / 5
+	} else {
+		widths.process = remaining / 2
+	}
+	if widths.process < 1 {
+		widths.process = 1
+	}
+
+	widths.bind = remaining - widths.process
+	if widths.bind < 1 {
+		widths.bind = 1
+		widths.process = remaining - widths.bind
+	}
+	if widths.process < 1 {
+		widths.process = 1
+	}
+
+	return widths
+}
+
+func renderListTableLine(widths listColumnWidths, port string, process string, pid string, family string, bind string, access string) string {
+	columns := []string{
+		pad(port, widths.port),
+		pad(process, widths.process),
+		pad(pid, widths.pid),
+		pad(family, widths.family),
+		pad(bind, widths.bind),
+		pad(access, widths.access),
+	}
+	return strings.Join(columns, " ")
+}
+
+func listBindValue(bindAddress string) string {
+	address := valueOrDash(bindAddress)
+	switch bindClassification(address) {
+	case "wildcard":
+		return "⚠ wildcard " + address
+	case "localhost":
+		return "localhost " + address
+	default:
+		return address
+	}
 }
 
 func (m model) renderDetails() string {

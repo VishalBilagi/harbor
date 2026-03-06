@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -148,23 +147,6 @@ func TestRenderDetailLinesShowsPortBadgeAndWrappedDetails(t *testing.T) {
 	}
 	if !strings.Contains(joined, "/tmp/service") {
 		t.Fatalf("expected cwd details in panel output, got: %q", joined)
-	}
-}
-
-func TestStreamStateBadgeReflectsModeAndHealth(t *testing.T) {
-	streaming := model{mode: dataModeStreaming, lastSnapshot: time.Now()}
-	if !strings.Contains(ansi.Strip(streaming.streamStateBadge()), "stream live") {
-		t.Fatalf("expected live stream badge in streaming mode")
-	}
-
-	stale := model{mode: dataModeStreaming, lastSnapshot: time.Now().Add(-30 * time.Second)}
-	if !strings.Contains(ansi.Strip(stale.streamStateBadge()), "stream stale") {
-		t.Fatalf("expected stale stream badge for old snapshots")
-	}
-
-	reconnecting := model{mode: dataModeConnecting}
-	if !strings.Contains(ansi.Strip(reconnecting.streamStateBadge()), "reconnecting") {
-		t.Fatalf("expected reconnecting badge while connecting")
 	}
 }
 
