@@ -239,12 +239,14 @@ private struct ListenerRowView: View {
                     sinkAction(false)
                 }
                 .buttonStyle(.bordered)
+                .tint(Color(red: 0.8, green: 0.5, blue: 0.1, opacity: 0.95))
                 .disabled(row.requiresAdminToKill || isSinking)
 
                 Button("Force Sink") {
                     sinkAction(true)
                 }
                 .buttonStyle(.bordered)
+                .tint(Color(red: 1, green: 0.09, blue: 0.25, opacity: 0.75))
                 .disabled(row.requiresAdminToKill || isSinking)
 
                 Spacer(minLength: 0)
