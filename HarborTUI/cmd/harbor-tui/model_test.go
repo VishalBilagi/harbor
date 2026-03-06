@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -220,10 +221,151 @@ func TestRenderListLinesShowsControlChipsAndWildcardMarker(t *testing.T) {
 
 	lines := m.renderListLines(120, 8)
 	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "Sort: Port") || !strings.Contains(joined, "Filter: All") {
+	if !strings.Contains(joined, "Sort:") || !strings.Contains(joined, "Port") || !strings.Contains(joined, "Filter: All") {
 		t.Fatalf("expected sort/filter chips at top of list, got: %q", joined)
 	}
 	if !strings.Contains(joined, "⚠ wildcard") {
 		t.Fatalf("expected wildcard warning glyph marker, got: %q", joined)
+	}
+}
+
+func TestRenderDetailLinesShowsAdminSafetyAndDeliberateActions(t *testing.T) {
+	requiresAdmin := true
+	command := "/usr/sbin/systemservice --watch"
+	cwd := "/var/root"
+	listeners := []listenerRecord{
+		{
+			Port:                8443,
+			PID:                 42,
+			ProcessName:         "systemservice",
+			BindAddress:         "0.0.0.0",
+			Family:              "ipv4",
+			CommandLine:         &command,
+			Cwd:                 &cwd,
+			RequiresAdminToKill: &requiresAdmin,
+		},
+	}
+
+	m := model{
+		width:     140,
+		height:    24,
+		listeners: listeners,
+		visible:   listeners,
+		selected:  0,
+	}
+
+	joined := ansi.Strip(strings.Join(m.renderDetailLines(60), "\n"))
+	if !strings.Contains(joined, "Ownership: admin-owned process; sink disabled") {
+		t.Fatalf("expected explicit admin ownership safety line, got: %q", joined)
+	}
+	if !strings.Contains(joined, "disabled (admin required)") {
+		t.Fatalf("expected actions to show disabled admin-required state, got: %q", joined)
+	}
+	if !strings.Contains(joined, "Intent gate: unavailable while admin-required") {
+		t.Fatalf("expected explicit intent-gate note for admin-owned process, got: %q", joined)
+	}
+}
+
+func TestCompactPathKeepsTailSegments(t *testing.T) {
+	path := "/Users/vishal/workspaces/harbor/cmd/harbor-tui"
+	compact := compactPath(path, 20)
+	if !strings.Contains(compact, "cmd/harbor-tui") {
+		t.Fatalf("expected compact path to retain tail segments, got: %q", compact)
+	}
+	if runeLen(compact) > 20 {
+		t.Fatalf("expected compact path to respect width, got: %q", compact)
+	}
+}
+
+func TestRenderDetailLinesShowsForceIntentGateForUserOwnedProcess(t *testing.T) {
+	requiresAdmin := false
+	command := "/usr/local/bin/node server.js"
+	cwd := "/Users/vishal/projects/harbor/service"
+	listeners := []listenerRecord{
+		{
+			Port:                3000,
+			PID:                 4242,
+			ProcessName:         "node",
+			BindAddress:         "127.0.0.1",
+			Family:              "ipv4",
+			CommandLine:         &command,
+			Cwd:                 &cwd,
+			RequiresAdminToKill: &requiresAdmin,
+		},
+	}
+
+	m := model{
+		width:     140,
+		height:    24,
+		listeners: listeners,
+		visible:   listeners,
+		selected:  0,
+	}
+
+	joined := ansi.Strip(strings.Join(m.renderDetailLines(60), "\n"))
+	if !strings.Contains(joined, "Ownership: user-owned process; sink enabled") {
+		t.Fatalf("expected explicit user-owned safety line, got: %q", joined)
+	}
+	if !strings.Contains(joined, "Intent gate: ✕K opens confirmation before sending SIGKILL") {
+		t.Fatalf("expected explicit force-kill intent gate for user-owned process, got: %q", joined)
+	}
+	if !strings.Contains(joined, "compact:") {
+		t.Fatalf("expected compact cwd preview line, got: %q", joined)
+	}
+}
+
+func TestSetListFilterAppliesChipFilterModes(t *testing.T) {
+	adminRequired := true
+	listeners := []listenerRecord{
+		{Port: 8080, PID: 10, ProcessName: "ipv4", Family: "ipv4", BindAddress: "127.0.0.1", RequiresAdminToKill: &adminRequired},
+		{Port: 9090, PID: 20, ProcessName: "ipv6", Family: "ipv6", BindAddress: "::1"},
+		{Port: 3000, PID: 30, ProcessName: "wild", Family: "ipv4", BindAddress: "0.0.0.0"},
+	}
+
+	m := model{
+		listeners:   listeners,
+		visible:     listeners,
+		listFilter:  listFilterAll,
+		statusText:  "Ready",
+		statusError: false,
+	}
+
+	m.setListFilter(listFilterIPv6)
+	if len(m.visible) != 1 || m.visible[0].PID != 20 {
+		t.Fatalf("expected only IPv6 listener after list filter, got: %#v", m.visible)
+	}
+
+	m.setListFilter(listFilterWildcard)
+	if len(m.visible) != 1 || m.visible[0].PID != 30 {
+		t.Fatalf("expected only wildcard listener after list filter, got: %#v", m.visible)
+	}
+
+	m.setListFilter(listFilterUserOwned)
+	if len(m.visible) != 2 {
+		t.Fatalf("expected two user-owned listeners, got: %#v", m.visible)
+	}
+}
+
+func TestUpdateKeyNumericChipShortcutsSwitchListFilter(t *testing.T) {
+	listeners := []listenerRecord{
+		{Port: 8080, PID: 10, ProcessName: "ipv4", Family: "ipv4", BindAddress: "127.0.0.1"},
+		{Port: 9090, PID: 20, ProcessName: "ipv6", Family: "ipv6", BindAddress: "::1"},
+	}
+
+	m := model{
+		listeners:   listeners,
+		visible:     listeners,
+		listFilter:  listFilterAll,
+		statusText:  "Ready",
+		statusError: false,
+	}
+
+	nextModel, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	updated := nextModel.(model)
+	if updated.listFilter != listFilterIPv6 {
+		t.Fatalf("expected numeric shortcut to select IPv6 chip, got: %s", updated.listFilter)
+	}
+	if len(updated.visible) != 1 || updated.visible[0].PID != 20 {
+		t.Fatalf("expected visible list filtered to IPv6, got: %#v", updated.visible)
 	}
 }

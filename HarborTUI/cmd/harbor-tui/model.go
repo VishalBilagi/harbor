@@ -60,6 +60,11 @@ type tuiStyles struct {
 	helpDangerKey     lipgloss.Style
 	helpAction        lipgloss.Style
 	helpSeparator     lipgloss.Style
+	detailSection     lipgloss.Style
+	detailRule        lipgloss.Style
+	detailBody        lipgloss.Style
+	detailDanger      lipgloss.Style
+	detailSafe        lipgloss.Style
 }
 
 var styles = tuiStyles{
@@ -157,7 +162,24 @@ var styles = tuiStyles{
 		Padding(0, 1),
 	helpAction:    lipgloss.NewStyle().Foreground(lipgloss.Color("#9EB0C8")),
 	helpSeparator: lipgloss.NewStyle().Foreground(lipgloss.Color("#6E83A1")),
+	detailSection: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#9CB5D6")).
+		Bold(true),
+	detailRule:   lipgloss.NewStyle().Foreground(lipgloss.Color("#2A3F5E")),
+	detailBody:   lipgloss.NewStyle().Foreground(lipgloss.Color("#D3E2F8")),
+	detailDanger: lipgloss.NewStyle().Foreground(lipgloss.Color("#F4B3B3")).Bold(true),
+	detailSafe:   lipgloss.NewStyle().Foreground(lipgloss.Color("#9BD7B0")),
 }
+
+type listFilterMode string
+
+const (
+	listFilterAll       listFilterMode = "all"
+	listFilterIPv4      listFilterMode = "ipv4"
+	listFilterIPv6      listFilterMode = "ipv6"
+	listFilterWildcard  listFilterMode = "wildcard"
+	listFilterUserOwned listFilterMode = "user-owned"
+)
 
 type model struct {
 	harborBin string
@@ -177,6 +199,7 @@ type model struct {
 
 	filter        string
 	filterFocused bool
+	listFilter    listFilterMode
 
 	confirm *sinkConfirmation
 
@@ -195,6 +218,7 @@ func newModel(cfg appConfig, source *harborDataSource, events <-chan tea.Msg) mo
 		events:     events,
 		mode:       dataModeConnecting,
 		statusText: "Waiting for snapshots...",
+		listFilter: listFilterAll,
 	}
 
 	initial.refreshVisible("")
@@ -362,6 +386,32 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filterFocused = true
 		return m, nil
+	case "1":
+		m.setListFilter(listFilterAll)
+		return m, nil
+	case "2":
+		m.setListFilter(listFilterIPv4)
+		return m, nil
+	case "3":
+		m.setListFilter(listFilterIPv6)
+		return m, nil
+	case "4":
+		m.setListFilter(listFilterWildcard)
+		return m, nil
+	case "5":
+		m.setListFilter(listFilterUserOwned)
+		return m, nil
+	case "tab":
+		m.cycleListFilter(1)
+		return m, nil
+	case "shift+tab":
+		m.cycleListFilter(-1)
+		return m, nil
+	case "s":
+		m.statusText = "Sort: Port"
+		m.statusError = false
+		m.backendError = false
+		return m, nil
 	case "esc":
 		if m.filter != "" {
 			m.filter = ""
@@ -485,7 +535,8 @@ func (m *model) applySnapshot(snapshot snapshotEnvelope) {
 }
 
 func (m *model) refreshVisible(selectionKey string) {
-	m.visible = applyFilter(m.listeners, m.filter)
+	filtered := applyFilter(m.listeners, m.filter)
+	m.visible = applyListFilter(filtered, m.listFilter)
 
 	if len(m.visible) == 0 {
 		m.selected = 0
@@ -504,6 +555,85 @@ func (m *model) refreshVisible(selectionKey string) {
 	}
 
 	m.clampSelection()
+}
+
+func (m *model) setListFilter(mode listFilterMode) {
+	selectionKey := ""
+	if selected, ok := m.currentListener(); ok {
+		selectionKey = selectedKey(selected)
+	}
+
+	m.listFilter = mode
+	m.refreshVisible(selectionKey)
+
+	statusSuffix := "All"
+	switch mode {
+	case listFilterIPv4:
+		statusSuffix = "IPv4"
+	case listFilterIPv6:
+		statusSuffix = "IPv6"
+	case listFilterWildcard:
+		statusSuffix = "Wildcard"
+	case listFilterUserOwned:
+		statusSuffix = "User-owned"
+	}
+	m.statusText = "Filter: " + statusSuffix
+	m.statusError = false
+	m.backendError = false
+}
+
+func (m *model) cycleListFilter(direction int) {
+	order := []listFilterMode{
+		listFilterAll,
+		listFilterIPv4,
+		listFilterIPv6,
+		listFilterWildcard,
+		listFilterUserOwned,
+	}
+
+	currentIndex := 0
+	for index, mode := range order {
+		if mode == m.listFilter {
+			currentIndex = index
+			break
+		}
+	}
+
+	nextIndex := (currentIndex + direction) % len(order)
+	if nextIndex < 0 {
+		nextIndex += len(order)
+	}
+
+	m.setListFilter(order[nextIndex])
+}
+
+func applyListFilter(listeners []listenerRecord, mode listFilterMode) []listenerRecord {
+	if mode == listFilterAll {
+		return listeners
+	}
+
+	filtered := make([]listenerRecord, 0, len(listeners))
+	for _, listener := range listeners {
+		include := false
+		switch mode {
+		case listFilterIPv4:
+			include = strings.EqualFold(listenerFamily(listener), "IPv4")
+		case listFilterIPv6:
+			include = strings.EqualFold(listenerFamily(listener), "IPv6")
+		case listFilterWildcard:
+			include = bindClassification(listener.BindAddress) == "wildcard"
+		case listFilterUserOwned:
+			include = !listenerRequiresAdmin(listener)
+		default:
+			include = true
+		}
+
+		if include {
+			filtered = append(filtered, listener)
+		}
+	}
+
+	return filtered
 }
 
 func (m model) currentListener() (listenerRecord, bool) {
@@ -811,13 +941,8 @@ func (m model) renderDetailLines(contentWidth int) []string {
 		return []string{"No listener selected."}
 	}
 
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
-
-	actionLine := "Sink actions: k SIGTERM, K SIGKILL"
-	if listenerRequiresAdmin(selected) {
-		actionLine = "Sink actions: disabled (admin required)"
+	if contentWidth < 24 {
+		contentWidth = 24
 	}
 
 	primary := lipgloss.JoinHorizontal(
@@ -838,33 +963,67 @@ func (m model) renderDetailLines(contentWidth int) []string {
 		bindChip,
 		styles.tagFamily.Render(listenerFamily(selected)),
 	}
-	if listenerRequiresAdmin(selected) {
+	adminRequired := listenerRequiresAdmin(selected)
+	if adminRequired {
 		metaChips = append(metaChips, styles.tagProtected.Render("admin required"))
+	} else {
+		metaChips = append(metaChips, styles.tagLocalhost.Render("user-owned"))
 	}
 	meta := lipgloss.JoinHorizontal(lipgloss.Top, metaChips...)
+
+	rule := styles.detailRule.Render(strings.Repeat("─", minInt(contentWidth, 36)))
+	safetyLine := styles.detailSafe.Render("Ownership: user-owned process; sink enabled")
+	if adminRequired {
+		safetyLine = styles.detailDanger.Render("Ownership: admin-owned process; sink disabled")
+	}
+
+	actionLine := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		m.helpSegment("k", "term"),
+		m.helpSegmentDanger("✕K", "force"),
+		styles.helpAction.Render("requires confirm"),
+	)
+	actionSafety := styles.detailDanger.Render("Intent gate: ✕K opens confirmation before sending SIGKILL")
+	if adminRequired {
+		actionLine = m.helpSegment("k/K", "disabled (admin required)")
+		actionSafety = styles.helpAction.Render("Intent gate: unavailable while admin-required")
+	}
 
 	lines := []string{
 		primary,
 		meta,
 		"",
-		fmt.Sprintf("CPU: %s", listenerCPU(selected)),
-		fmt.Sprintf("Memory: %s", listenerMemory(selected)),
-		fmt.Sprintf("Requires admin to kill: %s", listenerAdminState(selected)),
+		rule,
+		styles.detailSection.Render("Runtime"),
+		m.detailMetricLine("CPU", listenerCPU(selected)),
+		m.detailMetricLine("MEM", listenerMemory(selected)),
+		m.detailMetricLine("Admin", listenerAdminState(selected)),
 		"",
-		"Command line:",
+		styles.detailSection.Render("Command"),
 	}
 
-	lines = append(lines, wrapText(listenerCommand(selected), contentWidth)...)
+	for _, line := range wrapText(listenerCommand(selected), contentWidth) {
+		lines = append(lines, styles.detailBody.Render(line))
+	}
 	lines = append(lines, "")
 	lines = append(lines,
-		"Working directory:",
+		styles.detailSection.Render("Working Directory"),
 	)
-	lines = append(lines, wrapText(listenerCwd(selected), contentWidth)...)
+	cwdValue := listenerCwd(selected)
+	if cwdValue != "-" {
+		lines = append(lines, styles.muted.Render("compact: "+compactPath(cwdValue, maxInt(contentWidth-9, 16))))
+	}
+	for _, line := range wrapText(listenerCwd(selected), contentWidth) {
+		lines = append(lines, styles.detailBody.Render(line))
+	}
 	lines = append(lines,
 		"",
-		"Actions/help:",
+		styles.detailSection.Render("Safety"),
+		safetyLine,
+		styles.detailSection.Render("Actions"),
 		actionLine,
-		"Other: / filter, r refresh/reconnect, q quit",
+		actionSafety,
+		styles.helpAction.Render("Other: / filter, r reconnect, q quit"),
 	)
 
 	return lines
@@ -892,6 +1051,7 @@ func (m model) renderHelp() string {
 	segments := []string{
 		m.helpSegment("/", "filter"),
 		m.helpSegment("↑↓", "move"),
+		m.helpSegment("1-5", "chips"),
 	}
 
 	if m.sinkInFlight {
@@ -914,19 +1074,39 @@ func (m model) renderHelp() string {
 }
 
 func (m model) renderListControlChips(contentWidth int) string {
-	filterChip := styles.chipIdle.Render("Filter: All")
+	filterChip := func(mode listFilterMode, label string) string {
+		if m.listFilter == mode {
+			return styles.chipActive.Render(label)
+		}
+		return styles.chipIdle.Render(label)
+	}
+
+	quickFilterLabel := "All"
+	switch m.listFilter {
+	case listFilterIPv4:
+		quickFilterLabel = "IPv4"
+	case listFilterIPv6:
+		quickFilterLabel = "IPv6"
+	case listFilterWildcard:
+		quickFilterLabel = "Wildcard"
+	case listFilterUserOwned:
+		quickFilterLabel = "User-owned"
+	}
+	filterSummary := styles.chipIdle.Render("Filter: " + quickFilterLabel)
 	if strings.TrimSpace(m.filter) != "" {
-		filterChip = styles.chipActive.Render("Filter: " + m.filter)
+		filterSummary = styles.chipActive.Render("Filter: " + m.filter + " + " + quickFilterLabel)
 	}
 
 	line := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		styles.chipActive.Render("Sort: Port"),
-		filterChip,
-		styles.chipFuture.Render("IPv4"),
-		styles.chipFuture.Render("IPv6"),
-		styles.chipFuture.Render("Wildcard"),
-		styles.chipFuture.Render("User-owned"),
+		styles.chipIdle.Render("Sort:"),
+		styles.chipActive.Render("Port"),
+		filterSummary,
+		filterChip(listFilterAll, "All"),
+		filterChip(listFilterIPv4, "IPv4"),
+		filterChip(listFilterIPv6, "IPv6"),
+		filterChip(listFilterWildcard, "Wildcard"),
+		filterChip(listFilterUserOwned, "User-owned"),
 	)
 	return truncate(line, contentWidth)
 }
@@ -945,6 +1125,47 @@ func (m model) helpSegmentDanger(key string, action string) string {
 		styles.helpDangerKey.Render(key),
 		styles.helpAction.Render(action),
 	)
+}
+
+func (m model) detailMetricLine(label string, value string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.helpKey.Render(label),
+		styles.detailBody.Render(value),
+	)
+}
+
+func compactPath(path string, width int) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || trimmed == "-" {
+		return "-"
+	}
+	if width <= 0 {
+		return trimmed
+	}
+	if runeLen(trimmed) <= width {
+		return trimmed
+	}
+	parts := strings.Split(trimmed, "/")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			filtered = append(filtered, part)
+		}
+	}
+	if len(filtered) == 0 {
+		return truncate(trimmed, width)
+	}
+	if len(filtered) == 1 {
+		return truncate("…/"+filtered[0], width)
+	}
+
+	candidate := "…/" + filtered[len(filtered)-2] + "/" + filtered[len(filtered)-1]
+	if runeLen(candidate) <= width {
+		return candidate
+	}
+
+	return truncate(candidate, width)
 }
 
 func bindClassification(bindAddress string) string {
