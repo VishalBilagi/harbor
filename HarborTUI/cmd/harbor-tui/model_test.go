@@ -49,7 +49,8 @@ func TestRenderHelpShowsAdminDisabledHintForSelectedRow(t *testing.T) {
 	}
 
 	help := m.renderHelp()
-	if !strings.Contains(help, "k/K disabled (admin required)") {
+	stripped := ansi.Strip(help)
+	if !strings.Contains(stripped, "disabled (admin required)") {
 		t.Fatalf("expected admin disabled help hint, got: %q", help)
 	}
 }
@@ -161,7 +162,7 @@ func TestStreamStateBadgeReflectsModeAndHealth(t *testing.T) {
 	}
 
 	reconnecting := model{mode: dataModeConnecting}
-	if !strings.Contains(ansi.Strip(reconnecting.streamStateBadge()), "stream reconnecting") {
+	if !strings.Contains(ansi.Strip(reconnecting.streamStateBadge()), "reconnecting") {
 		t.Fatalf("expected reconnecting badge while connecting")
 	}
 }
@@ -175,5 +176,54 @@ func TestBindClassificationSupportsSemanticTags(t *testing.T) {
 	}
 	if bindClassification("192.168.1.4") != "other" {
 		t.Fatalf("expected other classification for private interface")
+	}
+}
+
+func TestRenderFilterShowsInputAndCountWhenFocused(t *testing.T) {
+	listeners := []listenerRecord{
+		{Port: 8080, PID: 100, ProcessName: "api"},
+		{Port: 5432, PID: 200, ProcessName: "postgres"},
+		{Port: 3000, PID: 300, ProcessName: "web"},
+	}
+	visible := listeners[:2]
+
+	m := model{
+		width:         140,
+		listeners:     listeners,
+		visible:       visible,
+		filterFocused: true,
+		filter:        "post",
+	}
+
+	filterLine := ansi.Strip(m.renderFilter())
+	if !strings.Contains(filterLine, "Filter") || !strings.Contains(filterLine, "2/3") {
+		t.Fatalf("expected focused filter line with count, got: %q", filterLine)
+	}
+	if !strings.Contains(filterLine, "▏") {
+		t.Fatalf("expected focused filter cursor marker, got: %q", filterLine)
+	}
+}
+
+func TestRenderListLinesShowsControlChipsAndWildcardMarker(t *testing.T) {
+	listeners := []listenerRecord{
+		{Port: 8080, PID: 200, ProcessName: "nginx", BindAddress: "*", Family: "ipv4"},
+		{Port: 3000, PID: 300, ProcessName: "web", BindAddress: "127.0.0.1", Family: "ipv4"},
+	}
+
+	m := model{
+		width:     140,
+		height:    20,
+		listeners: listeners,
+		visible:   listeners,
+		selected:  0,
+	}
+
+	lines := m.renderListLines(120, 8)
+	joined := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(joined, "Sort: Port") || !strings.Contains(joined, "Filter: All") {
+		t.Fatalf("expected sort/filter chips at top of list, got: %q", joined)
+	}
+	if !strings.Contains(joined, "⚠ wildcard") {
+		t.Fatalf("expected wildcard warning glyph marker, got: %q", joined)
 	}
 }

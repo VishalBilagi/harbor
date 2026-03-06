@@ -33,9 +33,14 @@ type tuiStyles struct {
 	streamWarning     lipgloss.Style
 	streamError       lipgloss.Style
 	filterLabel       lipgloss.Style
-	filterActive      lipgloss.Style
+	filterInput       lipgloss.Style
+	filterPlaceholder lipgloss.Style
+	filterCount       lipgloss.Style
 	filterIdle        lipgloss.Style
 	muted             lipgloss.Style
+	chipActive        lipgloss.Style
+	chipIdle          lipgloss.Style
+	chipFuture        lipgloss.Style
 	portBadge         lipgloss.Style
 	portBadgeSelected lipgloss.Style
 	process           lipgloss.Style
@@ -51,6 +56,10 @@ type tuiStyles struct {
 	rowNormal         lipgloss.Style
 	statusNormal      lipgloss.Style
 	statusError       lipgloss.Style
+	helpKey           lipgloss.Style
+	helpDangerKey     lipgloss.Style
+	helpAction        lipgloss.Style
+	helpSeparator     lipgloss.Style
 }
 
 var styles = tuiStyles{
@@ -75,12 +84,30 @@ var styles = tuiStyles{
 		Background(lipgloss.Color("#3F1B1D")).
 		Padding(0, 1),
 	filterLabel: lipgloss.NewStyle().Foreground(lipgloss.Color("#91A6C8")),
-	filterActive: lipgloss.NewStyle().
+	filterInput: lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#E7F3FF")).
-		Background(lipgloss.Color("#1B2E46")).
+		Background(lipgloss.Color("#1B2E46")),
+	filterPlaceholder: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#8FA1BC")).
+		Background(lipgloss.Color("#1B2E46")),
+	filterCount: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#CFE7FF")).
+		Background(lipgloss.Color("#223A54")).
 		Padding(0, 1),
 	filterIdle: lipgloss.NewStyle().Foreground(lipgloss.Color("#8FA1BC")),
 	muted:      lipgloss.NewStyle().Foreground(lipgloss.Color("#8FA1BC")),
+	chipActive: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#E3F3FF")).
+		Background(lipgloss.Color("#1A3249")).
+		Padding(0, 1),
+	chipIdle: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#B8CBE4")).
+		Background(lipgloss.Color("#202B3E")).
+		Padding(0, 1),
+	chipFuture: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#97A8C1")).
+		Background(lipgloss.Color("#172132")).
+		Padding(0, 1),
 	portBadge: lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#57D7FF")).
@@ -120,6 +147,16 @@ var styles = tuiStyles{
 	rowNormal:    lipgloss.NewStyle(),
 	statusNormal: lipgloss.NewStyle().Foreground(lipgloss.Color("#A7BCD8")),
 	statusError:  lipgloss.NewStyle().Foreground(lipgloss.Color("#F4A7A0")).Bold(true),
+	helpKey: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#DCEEFF")).
+		Background(lipgloss.Color("#21354D")).
+		Padding(0, 1),
+	helpDangerKey: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFE1E1")).
+		Background(lipgloss.Color("#4A2329")).
+		Padding(0, 1),
+	helpAction:    lipgloss.NewStyle().Foreground(lipgloss.Color("#9EB0C8")),
+	helpSeparator: lipgloss.NewStyle().Foreground(lipgloss.Color("#6E83A1")),
 }
 
 type model struct {
@@ -513,16 +550,31 @@ func (m model) renderHeader() string {
 }
 
 func (m model) renderFilter() string {
+	count := fmt.Sprintf("%d/%d", len(m.visible), len(m.listeners))
+
 	if m.filterFocused {
-		value := m.filter
+		value := strings.TrimSpace(m.filter)
 		if value == "" {
 			value = "type to filter"
+			value = styles.filterPlaceholder.Render(" " + value + " ")
+		} else {
+			value = styles.filterInput.Render(" " + value + " ")
 		}
+
+		box := lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderLeft(true).
+			BorderRight(true).
+			BorderForeground(lipgloss.Color("#2B4A6B")).
+			Padding(0, 1).
+			Render(value + styles.filterInput.Render(" ▏"))
+
 		line := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			styles.filterLabel.Render("🔎"),
 			styles.filterLabel.Render("Filter"),
-			styles.filterActive.Render(value),
+			box,
+			styles.filterCount.Render(count),
+			styles.muted.Render("Esc done"),
 		)
 		return truncate(line, maxInt(m.width, 40))
 	}
@@ -530,8 +582,9 @@ func (m model) renderFilter() string {
 	if strings.TrimSpace(m.filter) != "" {
 		line := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			styles.filterLabel.Render("🔎 Filter"),
-			styles.filterActive.Render(m.filter),
+			styles.filterLabel.Render("Filter"),
+			styles.chipActive.Render("query: "+m.filter),
+			styles.filterCount.Render(count),
 			styles.muted.Render("(press / to edit, Esc to clear)"),
 		)
 		return truncate(line, maxInt(m.width, 40))
@@ -539,7 +592,9 @@ func (m model) renderFilter() string {
 
 	line := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		styles.filterLabel.Render("🔎 Filter"),
+		styles.filterLabel.Render("Filter"),
+		styles.chipIdle.Render("all listeners"),
+		styles.filterCount.Render(count),
 		styles.filterIdle.Render("type / to search port, process, PID, bind, cmd, cwd"),
 	)
 	return truncate(line, maxInt(m.width, 40))
@@ -558,7 +613,7 @@ func (m model) snapshotAge() time.Duration {
 }
 
 func (m model) streamStateBadge() string {
-	label := "stream reconnecting"
+	label := "● reconnecting"
 	style := styles.streamWarning
 	age := m.snapshotAge()
 
@@ -566,29 +621,29 @@ func (m model) streamStateBadge() string {
 	case dataModeStreaming:
 		switch {
 		case m.backendError:
-			label = "stream error"
+			label = "● stream error"
 			style = styles.streamError
 		case !m.lastSnapshot.IsZero() && age >= 20*time.Second:
-			label = "stream stale"
+			label = "● stream stale"
 			style = styles.streamWarning
 		default:
-			label = "stream live"
+			label = "● stream live"
 			style = styles.streamLive
 		}
 	case dataModePolling:
 		if m.backendError {
-			label = "polling error"
+			label = "● polling error"
 			style = styles.streamError
 		} else {
-			label = "polling fallback"
+			label = "● polling fallback"
 			style = styles.streamWarning
 		}
 	case dataModeConnecting:
-		label = "stream reconnecting"
+		label = "● reconnecting"
 		style = styles.streamWarning
 	default:
 		if m.backendError {
-			label = "stream error"
+			label = "● stream error"
 			style = styles.streamError
 		}
 	}
@@ -667,7 +722,14 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 		maxRows = 2
 	}
 
-	rowSlots := maxRows / 2
+	lines := make([]string, 0, maxRows)
+	showControls := maxRows >= 5
+	if showControls {
+		lines = append(lines, m.renderListControlChips(contentWidth))
+	}
+
+	availableLines := maxRows - len(lines)
+	rowSlots := availableLines / 2
 	if rowSlots < 1 {
 		rowSlots = 1
 	}
@@ -675,9 +737,12 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 	mutable := m
 	start, end := mutable.tableWindow(rowSlots)
 	rows := mutable.visible[start:end]
-	lines := make([]string, 0, len(rows)*2+1)
 
 	for index, row := range rows {
+		if len(lines)+2 > maxRows {
+			break
+		}
+
 		absoluteIndex := start + index
 		selected := absoluteIndex == m.selected
 
@@ -706,7 +771,7 @@ func (m model) renderListLines(contentWidth int, maxRows int) []string {
 		bindChip := styles.tagNeutral.Render("bind " + valueOrDash(row.BindAddress))
 		switch bindClassification(row.BindAddress) {
 		case "wildcard":
-			bindChip = styles.tagWildcard.Render("wildcard " + valueOrDash(row.BindAddress))
+			bindChip = styles.tagWildcard.Render("⚠ wildcard " + valueOrDash(row.BindAddress))
 		case "localhost":
 			bindChip = styles.tagLocalhost.Render("localhost " + valueOrDash(row.BindAddress))
 		}
@@ -764,7 +829,7 @@ func (m model) renderDetailLines(contentWidth int) []string {
 	bindChip := styles.tagNeutral.Render("bind " + valueOrDash(selected.BindAddress))
 	switch bindClassification(selected.BindAddress) {
 	case "wildcard":
-		bindChip = styles.tagWildcard.Render("wildcard " + valueOrDash(selected.BindAddress))
+		bindChip = styles.tagWildcard.Render("⚠ wildcard " + valueOrDash(selected.BindAddress))
 	case "localhost":
 		bindChip = styles.tagLocalhost.Render("localhost " + valueOrDash(selected.BindAddress))
 	}
@@ -824,16 +889,62 @@ func (m model) renderStatus() string {
 }
 
 func (m model) renderHelp() string {
-	actionHint := "k term  K kill"
-	if selected, ok := m.currentListener(); ok && listenerRequiresAdmin(selected) {
-		actionHint = "k/K disabled (admin required)"
-	}
-	if m.sinkInFlight {
-		actionHint = "sink in progress..."
+	segments := []string{
+		m.helpSegment("/", "filter"),
+		m.helpSegment("↑↓", "move"),
 	}
 
-	line := fmt.Sprintf("/ filter  ↑/↓ move  %s  r reconnect  Esc clear filter  q quit", actionHint)
-	return truncate(styles.muted.Render(line), maxInt(m.width, 40))
+	if m.sinkInFlight {
+		segments = append(segments, styles.helpAction.Render("sink in progress..."))
+	} else if selected, ok := m.currentListener(); ok && listenerRequiresAdmin(selected) {
+		segments = append(segments, m.helpSegment("k/K", "disabled (admin required)"))
+	} else {
+		segments = append(segments, m.helpSegment("k", "term"), m.helpSegmentDanger("✕K", "force"))
+	}
+
+	segments = append(
+		segments,
+		m.helpSegment("r", "reconnect"),
+		m.helpSegment("Esc", "clear"),
+		m.helpSegment("q", "quit"),
+	)
+
+	line := strings.Join(segments, styles.helpSeparator.Render(" · "))
+	return truncate(line, maxInt(m.width, 40))
+}
+
+func (m model) renderListControlChips(contentWidth int) string {
+	filterChip := styles.chipIdle.Render("Filter: All")
+	if strings.TrimSpace(m.filter) != "" {
+		filterChip = styles.chipActive.Render("Filter: " + m.filter)
+	}
+
+	line := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.chipActive.Render("Sort: Port"),
+		filterChip,
+		styles.chipFuture.Render("IPv4"),
+		styles.chipFuture.Render("IPv6"),
+		styles.chipFuture.Render("Wildcard"),
+		styles.chipFuture.Render("User-owned"),
+	)
+	return truncate(line, contentWidth)
+}
+
+func (m model) helpSegment(key string, action string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.helpKey.Render(key),
+		styles.helpAction.Render(action),
+	)
+}
+
+func (m model) helpSegmentDanger(key string, action string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.helpDangerKey.Render(key),
+		styles.helpAction.Render(action),
+	)
 }
 
 func bindClassification(bindAddress string) string {
