@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "include-v-in-tag": true,
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "version.txt",
+        {
+          "type": "generic",
+          "path": "Sources/harbor/CLI.swift"
+        },
+        {
+          "type": "generic",
+          "path": "HarborTUI/cmd/harbor-tui/main.go"
+        },
+        {
+          "type": "generic",
+          "path": "Harbor.xcodeproj/project.pbxproj"
+        }
+      ],
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "Features",
+          "hidden": false
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes",
+          "hidden": false
+        },
+        {
+          "type": "perf",
+          "section": "Performance",
+          "hidden": false
+        },
+        {
+          "type": "revert",
+          "section": "Reverts",
+          "hidden": false
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Miscellaneous",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": true
+        }
+      ]
+    }
+  }
+}

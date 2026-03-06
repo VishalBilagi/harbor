@@ -28,6 +28,7 @@ swift test
 ### CLI smoke checks
 
 ```sh
+swift run harbor version
 swift run harbor list --json
 swift run harbor who 3000 --json
 swift run harbor sink --pid <pid> --yes
@@ -44,6 +45,11 @@ xcodebuild -project Harbor.xcodeproj -scheme Harbor build
 ```sh
 cd HarborTUI
 go build ./...
+```
+
+```sh
+cd HarborTUI
+go run ./cmd/harbor-tui --version
 ```
 
 ```sh
@@ -86,6 +92,14 @@ TUI controls:
 - `memBytes` can be `null` when process info cannot be read.
 - `requiresAdminToKill` can be `null` in machine output and is interpreted conservatively by UIs.
 - Cache entries are keyed by PID + process start time; when a PID is reused by a new process, cached metadata is invalidated.
+
+## Versioning and releases
+
+- Harbor uses repository-wide SemVer tags in `vX.Y.Z` format.
+- The baseline version line is `v0.1.x`.
+- `prepare-release` is manual (`workflow_dispatch`) and opens/updates a release PR only.
+- `publish-release` runs only when a release PR is merged and creates the tag + GitHub Release.
+- See `docs/versioning.md` for the policy and maintainer flow.
 
 ## Sink behavior and safety
 
