@@ -132,7 +132,13 @@ struct ContentView: View {
                                     copyToClipboard(String(row.pid))
                                 },
                                 copyPortAction: {
-                                    copyToClipboard(String(row.port))
+                                    copyToClipboard(row.portText)
+                                },
+                                copyBindAction: {
+                                    copyToClipboard(row.bindSummary)
+                                },
+                                copyFamilyAction: {
+                                    copyToClipboard(row.familySummary)
                                 }
                             )
                         }
@@ -167,30 +173,29 @@ private struct ListenerRowView: View {
     let sinkAction: (_ force: Bool) -> Void
     let copyPIDAction: () -> Void
     let copyPortAction: () -> Void
+    let copyBindAction: () -> Void
+    let copyFamilyAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(":\(row.port)")
-                    .font(.headline.monospacedDigit())
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button(action: copyPortAction) {
+                    Text(row.portText)
+                        .font(.headline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.accentColor.gradient)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Copy port \(row.portText)")
 
                 Text(row.processName)
-                    .font(.headline)
+                    .font(.headline.weight(.semibold))
                     .lineLimit(1)
-
-                Text("PID \(row.pid)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                Text("bind \(row.bindSummary)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Text(row.familySummary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
 
                 Spacer(minLength: 8)
 
@@ -207,16 +212,25 @@ private struct ListenerRowView: View {
             .lineLimit(1)
             .truncationMode(.tail)
 
+            HStack(spacing: 6) {
+                copyPill("PID \(row.pid)", monospacedDigits: true, action: copyPIDAction)
+                copyPill("bind \(row.bindSummary)", action: copyBindAction)
+                copyPill(row.familySummary, action: copyFamilyAction)
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+
             Text(row.tickerText)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
 
             if let statsText = row.statsText {
                 Text(statsText)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
 
@@ -232,12 +246,6 @@ private struct ListenerRowView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(row.requiresAdminToKill || isSinking)
-
-                Button("Copy PID", action: copyPIDAction)
-                    .buttonStyle(.borderless)
-
-                Button("Copy Port", action: copyPortAction)
-                    .buttonStyle(.borderless)
 
                 Spacer(minLength: 0)
 
@@ -255,6 +263,36 @@ private struct ListenerRowView: View {
                 .fill(Color.secondary.opacity(0.08))
         )
     }
+
+    private func copyPill(
+        _ text: String,
+        monospacedDigits: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            metadataChip(text, monospacedDigits: monospacedDigits)
+        }
+        .buttonStyle(.plain)
+        .help("Copy \(text)")
+    }
+
+    @ViewBuilder
+    private func metadataChip(_ text: String, monospacedDigits: Bool = false) -> some View {
+        let base = Text(text)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.secondary.opacity(0.13))
+            )
+
+        if monospacedDigits {
+            base.font(.caption2.monospacedDigit())
+        } else {
+            base.font(.caption2)
+        }
+    }
 }
 
 private struct PendingSinkAction: Identifiable {
@@ -263,7 +301,7 @@ private struct PendingSinkAction: Identifiable {
     let force: Bool
 
     var title: String {
-        force ? "Force Sink :\(row.port)?" : "Sink :\(row.port)?"
+        force ? "Force Sink \(row.portText)?" : "Sink \(row.portText)?"
     }
 
     var confirmationLabel: String {

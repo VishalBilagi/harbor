@@ -23,6 +23,10 @@ struct ListenerRow: Identifiable, Equatable {
         "\(port)-\(pid)-\(processName)"
     }
 
+    var portText: String {
+        String(port)
+    }
+
     var bindSummary: String {
         Self.summarize(bindAddresses, maxVisible: 2)
     }

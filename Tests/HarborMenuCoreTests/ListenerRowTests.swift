@@ -62,6 +62,26 @@ import Testing
     #expect(row.requiresAdminToKill == true)
 }
 
+@Test func groupedRowsExposeUngroupedPortText() throws {
+    let rows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 5432,
+            bindAddress: "127.0.0.1",
+            family: .ipv4,
+            pid: 99,
+            processName: "api",
+            commandLine: nil,
+            cwd: nil,
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        )
+    ])
+
+    let row = try #require(rows.first)
+    #expect(row.portText == "5432")
+}
+
 @Test func groupedRowsRequireAdminIfAnyListenerNeedsIt() throws {
     let rows = ListenerRow.grouped(from: [
         makeListener(
