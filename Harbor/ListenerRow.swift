@@ -2,6 +2,13 @@ import Foundation
 import PortKit
 
 struct ListenerRow: Identifiable, Equatable {
+    enum BindTone: Equatable {
+        case neutral
+        case localhost
+        case wildcard
+        case protected
+    }
+
     private struct GroupKey: Hashable {
         let port: Int
         let pid: Int
@@ -36,9 +43,33 @@ struct ListenerRow: Identifiable, Equatable {
         return labels.joined(separator: "+")
     }
 
+    var bindTone: BindTone {
+        if requiresAdminToKill {
+            return .protected
+        }
+
+        if bindAddresses.contains(where: Self.isWildcardBindAddress) {
+            return .wildcard
+        }
+
+        if !bindAddresses.isEmpty && bindAddresses.allSatisfy(Self.isLoopbackBindAddress) {
+            return .localhost
+        }
+
+        return .neutral
+    }
+
+    var tickerCommandText: String? {
+        commandLine.flatMap(Self.normalized).flatMap(Self.compactCommand)
+    }
+
+    var tickerCwdText: String? {
+        cwd.flatMap(Self.normalized).map(Self.compactPath)
+    }
+
     var tickerText: String {
-        let command = commandLine.flatMap(Self.normalized)
-        let formattedCwd = cwd.flatMap(Self.normalized).map(Self.homeRelativePath)
+        let command = tickerCommandText
+        let formattedCwd = tickerCwdText
 
         switch (command, formattedCwd) {
         case let (command?, formattedCwd?):
@@ -160,7 +191,7 @@ struct ListenerRow: Identifiable, Equatable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private nonisolated static func homeRelativePath(_ path: String) -> String {
+    private nonisolated static func compactPath(_ path: String) -> String {
         let homeDirectory = NSHomeDirectory()
         if path == homeDirectory {
             return "~"
@@ -168,10 +199,77 @@ struct ListenerRow: Identifiable, Equatable {
 
         let homePrefix = homeDirectory + "/"
         guard path.hasPrefix(homePrefix) else {
+            return compactApplicationsPath(path)
+        }
+
+        return compactApplicationsPath("~/" + path.dropFirst(homePrefix.count))
+    }
+
+    private nonisolated static func compactCommand(_ commandLine: String) -> String? {
+        let tokens = commandLine.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let executableToken = tokens.first else {
+            return nil
+        }
+
+        let executable = compactExecutable(executableToken)
+        let args = tokens.dropFirst().prefix(2).map(compactCommandArg)
+        let hasMoreArgs = tokens.count > 3
+
+        var parts = [executable]
+        parts.append(contentsOf: args)
+        if hasMoreArgs {
+            parts.append("…")
+        }
+
+        return parts.joined(separator: " ")
+    }
+
+    private nonisolated static func compactExecutable(_ token: String) -> String {
+        let cleaned = compactCommandArg(token)
+        if cleaned.hasPrefix("/") || cleaned.hasPrefix("~/") {
+            return URL(fileURLWithPath: cleaned).lastPathComponent
+        }
+        return cleaned
+    }
+
+    private nonisolated static func compactCommandArg(_ token: String) -> String {
+        let strippedToken = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        if strippedToken.hasPrefix("/") || strippedToken.hasPrefix("~/") {
+            return compactPath(strippedToken)
+        }
+        return strippedToken
+    }
+
+    private nonisolated static func compactApplicationsPath(_ path: String) -> String {
+        let prefix = "/Applications/"
+        guard path.hasPrefix(prefix) else {
             return path
         }
 
-        return "~/" + path.dropFirst(homePrefix.count)
+        let components = path.split(separator: "/")
+        guard let appIndex = components.firstIndex(where: { $0.hasSuffix(".app") }) else {
+            return path
+        }
+
+        return components[appIndex...].joined(separator: "/")
+    }
+
+    private nonisolated static func isWildcardBindAddress(_ address: String) -> Bool {
+        switch address.lowercased() {
+        case "*", "0.0.0.0", "::", "[::]":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func isLoopbackBindAddress(_ address: String) -> Bool {
+        switch address.lowercased() {
+        case "127.0.0.1", "::1", "[::1]", "localhost":
+            return true
+        default:
+            return false
+        }
     }
 
     private nonisolated static func formatMemory(_ memBytes: UInt64) -> String {

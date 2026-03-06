@@ -82,6 +82,91 @@ import Testing
     #expect(row.portText == "5432")
 }
 
+@Test func groupedRowsClassifyBindTonesByListenerKind() throws {
+    let localhostRows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 3000,
+            bindAddress: "127.0.0.1",
+            family: .ipv4,
+            pid: 10,
+            processName: "node",
+            commandLine: "node",
+            cwd: nil,
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        ),
+        makeListener(
+            port: 3000,
+            bindAddress: "::1",
+            family: .ipv6,
+            pid: 10,
+            processName: "node",
+            commandLine: "node",
+            cwd: nil,
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        )
+    ])
+
+    let wildcardRows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 8080,
+            bindAddress: "0.0.0.0",
+            family: .ipv4,
+            pid: 11,
+            processName: "api",
+            commandLine: "api",
+            cwd: nil,
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        )
+    ])
+
+    let protectedRows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 5432,
+            bindAddress: "127.0.0.1",
+            family: .ipv4,
+            pid: 12,
+            processName: "postgres",
+            commandLine: "postgres",
+            cwd: nil,
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: true
+        )
+    ])
+
+    #expect(try #require(localhostRows.first).bindTone == .localhost)
+    #expect(try #require(wildcardRows.first).bindTone == .wildcard)
+    #expect(try #require(protectedRows.first).bindTone == .protected)
+}
+
+@Test func groupedRowsCompactsTickerCommandAndPaths() throws {
+    let home = NSHomeDirectory()
+    let rows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 4567,
+            bindAddress: "127.0.0.1",
+            family: .ipv4,
+            pid: 66,
+            processName: "node",
+            commandLine: "/usr/local/bin/node \(home)/apps/service/server.js --watch --inspect",
+            cwd: "\(home)/apps/service",
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        )
+    ])
+
+    let row = try #require(rows.first)
+    #expect(row.tickerCommandText == "node ~/apps/service/server.js --watch …")
+    #expect(row.tickerCwdText == "~/apps/service")
+}
+
 @Test func groupedRowsRequireAdminIfAnyListenerNeedsIt() throws {
     let rows = ListenerRow.grouped(from: [
         makeListener(

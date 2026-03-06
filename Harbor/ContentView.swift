@@ -204,8 +204,8 @@ private struct ListenerRowView: View {
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .foregroundStyle(.orange)
-                        .background(Color.orange.opacity(0.15))
+                        .foregroundStyle(Color(red: 0.73, green: 0.33, blue: 0.33))
+                        .background(Color(red: 0.73, green: 0.33, blue: 0.33).opacity(0.14))
                         .clipShape(Capsule())
                 }
             }
@@ -214,18 +214,14 @@ private struct ListenerRowView: View {
 
             HStack(spacing: 6) {
                 copyPill("PID \(row.pid)", monospacedDigits: true, action: copyPIDAction)
-                copyPill("bind \(row.bindSummary)", action: copyBindAction)
+                copyPill("bind \(row.bindSummary)", tone: row.bindTone, action: copyBindAction)
                 copyPill(row.familySummary, action: copyFamilyAction)
                 Spacer(minLength: 0)
             }
             .lineLimit(1)
             .truncationMode(.tail)
 
-            Text(row.tickerText)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            tickerRow
 
             if let statsText = row.statsText {
                 Text(statsText)
@@ -269,30 +265,95 @@ private struct ListenerRowView: View {
     private func copyPill(
         _ text: String,
         monospacedDigits: Bool = false,
+        tone: ListenerRow.BindTone = .neutral,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            metadataChip(text, monospacedDigits: monospacedDigits)
+            metadataChip(text, monospacedDigits: monospacedDigits, tone: tone)
         }
         .buttonStyle(.plain)
         .help("Copy \(text)")
     }
 
     @ViewBuilder
-    private func metadataChip(_ text: String, monospacedDigits: Bool = false) -> some View {
+    private var tickerRow: some View {
+        if let command = row.tickerCommandText, let cwd = row.tickerCwdText {
+            HStack(spacing: 4) {
+                Text(command)
+                    .foregroundStyle(.primary)
+                    .layoutPriority(2)
+                Text("•")
+                    .foregroundStyle(.tertiary)
+                Text(cwd)
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(1)
+            }
+            .font(.caption2.monospaced())
+            .lineLimit(1)
+            .truncationMode(.tail)
+        } else if let command = row.tickerCommandText {
+            Text(command)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        } else if let cwd = row.tickerCwdText {
+            Text(cwd)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        } else {
+            Text("No command line or cwd metadata")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    @ViewBuilder
+    private func metadataChip(
+        _ text: String,
+        monospacedDigits: Bool = false,
+        tone: ListenerRow.BindTone = .neutral
+    ) -> some View {
+        let (foreground, background) = chipColors(for: tone)
         let base = Text(text)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.secondary.opacity(0.13))
+                    .fill(background)
             )
 
         if monospacedDigits {
             base.font(.caption2.monospacedDigit())
         } else {
             base.font(.caption2)
+        }
+    }
+
+    private func chipColors(for tone: ListenerRow.BindTone) -> (Color, Color) {
+        switch tone {
+        case .neutral:
+            return (.secondary, Color.secondary.opacity(0.13))
+        case .localhost:
+            return (
+                Color(red: 0.21, green: 0.52, blue: 0.74),
+                Color(red: 0.21, green: 0.52, blue: 0.74).opacity(0.16)
+            )
+        case .wildcard:
+            return (
+                Color(red: 0.73, green: 0.45, blue: 0.12),
+                Color(red: 0.73, green: 0.45, blue: 0.12).opacity(0.17)
+            )
+        case .protected:
+            return (
+                Color(red: 0.70, green: 0.34, blue: 0.34),
+                Color(red: 0.70, green: 0.34, blue: 0.34).opacity(0.16)
+            )
         }
     }
 }
