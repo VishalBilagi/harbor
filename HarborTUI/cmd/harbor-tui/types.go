@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 type snapshotEnvelope struct {
@@ -180,7 +182,7 @@ func derefString(value *string) string {
 }
 
 func runeLen(value string) int {
-	return len([]rune(value))
+	return ansi.StringWidth(value)
 }
 
 func truncate(value string, width int) string {
@@ -188,16 +190,15 @@ func truncate(value string, width int) string {
 		return ""
 	}
 
-	runes := []rune(value)
-	if len(runes) <= width {
+	if runeLen(value) <= width {
 		return value
 	}
 
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Cut(value, 0, width)
 	}
 
-	return string(runes[:width-3]) + "..."
+	return ansi.Truncate(value, width, "...")
 }
 
 func pad(value string, width int) string {

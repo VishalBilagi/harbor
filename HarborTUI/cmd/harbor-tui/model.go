@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type sinkConfirmation struct {
@@ -22,6 +23,103 @@ type sinkResultMsg struct {
 	Force  bool
 	Output string
 	Err    error
+}
+
+type tuiStyles struct {
+	headerBar         lipgloss.Style
+	headerBadge       lipgloss.Style
+	headerMeta        lipgloss.Style
+	streamLive        lipgloss.Style
+	streamWarning     lipgloss.Style
+	streamError       lipgloss.Style
+	filterLabel       lipgloss.Style
+	filterActive      lipgloss.Style
+	filterIdle        lipgloss.Style
+	muted             lipgloss.Style
+	portBadge         lipgloss.Style
+	portBadgeSelected lipgloss.Style
+	process           lipgloss.Style
+	processSelected   lipgloss.Style
+	pid               lipgloss.Style
+	pidSelected       lipgloss.Style
+	tagLocalhost      lipgloss.Style
+	tagWildcard       lipgloss.Style
+	tagProtected      lipgloss.Style
+	tagNeutral        lipgloss.Style
+	tagFamily         lipgloss.Style
+	rowSelected       lipgloss.Style
+	rowNormal         lipgloss.Style
+	statusNormal      lipgloss.Style
+	statusError       lipgloss.Style
+}
+
+var styles = tuiStyles{
+	headerBar: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#d8e7ff")),
+	headerBadge: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#66D9FF")).
+		Background(lipgloss.Color("#10293A")).
+		Padding(0, 1),
+	headerMeta: lipgloss.NewStyle().Foreground(lipgloss.Color("#A9B8D0")),
+	streamLive: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#8AE38A")).
+		Background(lipgloss.Color("#17381F")).
+		Padding(0, 1),
+	streamWarning: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F0C674")).
+		Background(lipgloss.Color("#3A2C12")).
+		Padding(0, 1),
+	streamError: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F28B82")).
+		Background(lipgloss.Color("#3F1B1D")).
+		Padding(0, 1),
+	filterLabel: lipgloss.NewStyle().Foreground(lipgloss.Color("#91A6C8")),
+	filterActive: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#E7F3FF")).
+		Background(lipgloss.Color("#1B2E46")).
+		Padding(0, 1),
+	filterIdle: lipgloss.NewStyle().Foreground(lipgloss.Color("#8FA1BC")),
+	muted:      lipgloss.NewStyle().Foreground(lipgloss.Color("#8FA1BC")),
+	portBadge: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#57D7FF")).
+		Background(lipgloss.Color("#103243")).
+		Padding(0, 1),
+	portBadgeSelected: lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#00151F")).
+		Background(lipgloss.Color("#8CE5FF")).
+		Padding(0, 1),
+	process:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E7EEF9")),
+	processSelected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F4FAFF")),
+	pid:             lipgloss.NewStyle().Foreground(lipgloss.Color("#8F9AB0")),
+	pidSelected:     lipgloss.NewStyle().Foreground(lipgloss.Color("#B6C4DE")),
+	tagLocalhost: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#65C3FF")).
+		Background(lipgloss.Color("#11364A")).
+		Padding(0, 1),
+	tagWildcard: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F4C26E")).
+		Background(lipgloss.Color("#3B2B12")).
+		Padding(0, 1),
+	tagProtected: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F19999")).
+		Background(lipgloss.Color("#3E1E25")).
+		Padding(0, 1),
+	tagNeutral: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#C0CFEA")).
+		Background(lipgloss.Color("#1C2738")).
+		Padding(0, 1),
+	tagFamily: lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#C9B8F4")).
+		Background(lipgloss.Color("#2A243D")).
+		Padding(0, 1),
+	rowSelected: lipgloss.NewStyle().
+		Background(lipgloss.Color("#102743")),
+	rowNormal:    lipgloss.NewStyle(),
+	statusNormal: lipgloss.NewStyle().Foreground(lipgloss.Color("#A7BCD8")),
+	statusError:  lipgloss.NewStyle().Foreground(lipgloss.Color("#F4A7A0")).Bold(true),
 }
 
 type model struct {
@@ -50,6 +148,7 @@ type model struct {
 	lastSnapshot time.Time
 	statusText   string
 	statusError  bool
+	backendError bool
 }
 
 func newModel(cfg appConfig, source *harborDataSource, events <-chan tea.Msg) model {
@@ -81,10 +180,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case backendStatusMsg:
 		m.statusText = msg.Text
 		m.statusError = msg.IsError
+		m.backendError = msg.IsError
 		return m, waitForBackendMsg(m.events)
 	case backendSnapshotMsg:
 		m.applySnapshot(msg.Snapshot)
 		m.statusError = false
+		m.backendError = false
 		if m.mode == dataModeStreaming {
 			m.statusText = "Streaming live snapshots"
 		} else {
@@ -94,6 +195,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case backendClosedMsg:
 		m.statusText = "Data source stopped"
 		m.statusError = true
+		m.backendError = true
 		return m, nil
 	case sinkResultMsg:
 		m.sinkInFlight = false
@@ -104,6 +206,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.statusText = fmt.Sprintf("Sink failed for PID %d: %s", msg.PID, reason)
 			m.statusError = true
+			m.backendError = false
 			return m, nil
 		}
 
@@ -117,6 +220,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusText = fmt.Sprintf("Sent %s to PID %d", signalName, msg.PID)
 		}
 		m.statusError = false
+		m.backendError = false
 		m.source.RequestReconnect()
 		return m, nil
 	case tea.KeyMsg:
@@ -164,6 +268,7 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.source.RequestReconnect()
 		m.statusText = "Reconnecting data source..."
 		m.statusError = false
+		m.backendError = false
 		return m, nil
 	}
 
@@ -173,6 +278,7 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirm = nil
 			m.statusText = "Sink cancelled"
 			m.statusError = false
+			m.backendError = false
 			return m, nil
 		case "y", "enter":
 			confirmation := *m.confirm
@@ -184,6 +290,7 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.statusText = fmt.Sprintf("Sending %s to PID %d...", signalName, confirmation.PID)
 			m.statusError = false
+			m.backendError = false
 			return m, runSinkCommand(m.harborBin, confirmation.PID, confirmation.Force)
 		default:
 			return m, nil
@@ -224,6 +331,7 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refreshVisible("")
 			m.statusText = "Filter cleared"
 			m.statusError = false
+			m.backendError = false
 		}
 		return m, nil
 	case "enter":
@@ -374,41 +482,118 @@ func (m model) currentListener() (listenerRecord, bool) {
 }
 
 func (m model) renderHeader() string {
-	modeLabel := string(m.mode)
-	if modeLabel == "" {
-		modeLabel = string(dataModeConnecting)
-	}
-
-	updated := "never"
+	age := m.snapshotAge()
+	ageText := styles.streamWarning.Render("last update --:--:--")
 	if !m.lastSnapshot.IsZero() {
-		updated = m.lastSnapshot.Local().Format("15:04:05")
+		label := "last update " + m.lastSnapshot.Local().Format("15:04:05")
+		switch {
+		case age >= 20*time.Second:
+			ageText = styles.streamError.Render(label)
+		case age >= 8*time.Second:
+			ageText = styles.streamWarning.Render(label)
+		default:
+			ageText = styles.headerMeta.Render(label)
+		}
 	}
 
-	visibleCount := len(m.visible)
-	totalCount := len(m.listeners)
-	header := fmt.Sprintf(
-		"Harbor TUI | mode: %s | listeners: %d/%d | last update: %s",
-		modeLabel,
-		visibleCount,
-		totalCount,
-		updated,
+	streamBadge := m.streamStateBadge()
+	left := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.headerBadge.Render("HARBOR"),
+		styles.headerMeta.Render("terminal ops"),
 	)
-
-	return truncate(header, maxInt(m.width, 40))
+	right := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		streamBadge,
+		styles.headerMeta.Render(fmt.Sprintf("listeners %d/%d", len(m.visible), len(m.listeners))),
+		ageText,
+	)
+	line := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	return truncate(styles.headerBar.Render(line), maxInt(m.width, 40))
 }
 
 func (m model) renderFilter() string {
-	focusIndicator := " "
 	if m.filterFocused {
-		focusIndicator = ">"
-	}
-	value := m.filter
-	if value == "" {
-		value = "(type / to filter)"
+		value := m.filter
+		if value == "" {
+			value = "type to filter"
+		}
+		line := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			styles.filterLabel.Render("🔎"),
+			styles.filterLabel.Render("Filter"),
+			styles.filterActive.Render(value),
+		)
+		return truncate(line, maxInt(m.width, 40))
 	}
 
-	line := fmt.Sprintf("%s Filter: %s", focusIndicator, value)
+	if strings.TrimSpace(m.filter) != "" {
+		line := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			styles.filterLabel.Render("🔎 Filter"),
+			styles.filterActive.Render(m.filter),
+			styles.muted.Render("(press / to edit, Esc to clear)"),
+		)
+		return truncate(line, maxInt(m.width, 40))
+	}
+
+	line := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.filterLabel.Render("🔎 Filter"),
+		styles.filterIdle.Render("type / to search port, process, PID, bind, cmd, cwd"),
+	)
 	return truncate(line, maxInt(m.width, 40))
+}
+
+func (m model) snapshotAge() time.Duration {
+	if m.lastSnapshot.IsZero() {
+		return 0
+	}
+
+	age := time.Since(m.lastSnapshot)
+	if age < 0 {
+		return 0
+	}
+	return age
+}
+
+func (m model) streamStateBadge() string {
+	label := "stream reconnecting"
+	style := styles.streamWarning
+	age := m.snapshotAge()
+
+	switch m.mode {
+	case dataModeStreaming:
+		switch {
+		case m.backendError:
+			label = "stream error"
+			style = styles.streamError
+		case !m.lastSnapshot.IsZero() && age >= 20*time.Second:
+			label = "stream stale"
+			style = styles.streamWarning
+		default:
+			label = "stream live"
+			style = styles.streamLive
+		}
+	case dataModePolling:
+		if m.backendError {
+			label = "polling error"
+			style = styles.streamError
+		} else {
+			label = "polling fallback"
+			style = styles.streamWarning
+		}
+	case dataModeConnecting:
+		label = "stream reconnecting"
+		style = styles.streamWarning
+	default:
+		if m.backendError {
+			label = "stream error"
+			style = styles.streamError
+		}
+	}
+
+	return style.Render(label)
 }
 
 func (m *model) tableWindow(maxRows int) (int, int) {
@@ -473,141 +658,79 @@ func (m model) renderTable() string {
 func (m model) renderListLines(contentWidth int, maxRows int) []string {
 	if len(m.visible) == 0 {
 		if len(m.listeners) == 0 {
-			return []string{"No active listeners in the current snapshot."}
+			return []string{styles.muted.Render("No active listeners in the current snapshot.")}
 		}
-		return []string{"No listeners match the current filter."}
+		return []string{styles.muted.Render("No listeners match the current filter.")}
 	}
 
-	if maxRows < 3 {
-		maxRows = 3
+	if maxRows < 2 {
+		maxRows = 2
+	}
+
+	rowSlots := maxRows / 2
+	if rowSlots < 1 {
+		rowSlots = 1
 	}
 
 	mutable := m
-	start, end := mutable.tableWindow(maxRows)
+	start, end := mutable.tableWindow(rowSlots)
 	rows := mutable.visible[start:end]
-
-	type tableColumn struct {
-		Header   string
-		MinWidth int
-		Flexible bool
-		Value    func(listenerRecord) string
-	}
-
-	columns := []tableColumn{
-		{Header: "Port", MinWidth: 4, Value: func(listener listenerRecord) string {
-			return strconv.Itoa(listener.Port)
-		}},
-		{Header: "Process", MinWidth: 7, Flexible: true, Value: func(listener listenerRecord) string {
-			if listenerRequiresAdmin(listener) {
-				return listener.ProcessName + " [admin]"
-			}
-			return listener.ProcessName
-		}},
-		{Header: "PID", MinWidth: 3, Value: func(listener listenerRecord) string {
-			return strconv.Itoa(listener.PID)
-		}},
-		{Header: "Bind", MinWidth: 4, Flexible: true, Value: func(listener listenerRecord) string {
-			if listener.BindAddress == "" {
-				return "-"
-			}
-			return listener.BindAddress
-		}},
-		{Header: "Fam", MinWidth: 3, Value: func(listener listenerRecord) string {
-			return listenerFamily(listener)
-		}},
-	}
-
-	widths := make([]int, len(columns))
-	mins := make([]int, len(columns))
-	for index, column := range columns {
-		maxWidth := runeLen(column.Header)
-		if column.MinWidth > maxWidth {
-			maxWidth = column.MinWidth
-		}
-		for _, row := range rows {
-			valueWidth := runeLen(column.Value(row))
-			if valueWidth > maxWidth {
-				maxWidth = valueWidth
-			}
-		}
-		widths[index] = maxWidth
-		mins[index] = maxInt(column.MinWidth, runeLen(column.Header))
-	}
-
-	available := contentWidth - 2
-	if available < 20 {
-		available = 20
-	}
-	separatorWidth := 1
-	totalWidth := func() int {
-		sum := 0
-		for _, width := range widths {
-			sum += width
-		}
-		sum += (len(widths) - 1) * separatorWidth
-		return sum
-	}
-
-	reduceWidth := func(flexibleOnly bool) bool {
-		chosenIndex := -1
-		chosenWidth := -1
-		for index, width := range widths {
-			if width <= mins[index] {
-				continue
-			}
-			if flexibleOnly && !columns[index].Flexible {
-				continue
-			}
-			if width > chosenWidth {
-				chosenWidth = width
-				chosenIndex = index
-			}
-		}
-
-		if chosenIndex == -1 {
-			return false
-		}
-		widths[chosenIndex]--
-		return true
-	}
-
-	for totalWidth() > available {
-		if reduceWidth(true) {
-			continue
-		}
-		if reduceWidth(false) {
-			continue
-		}
-		break
-	}
-
-	separator := strings.Repeat(" ", separatorWidth)
-	lines := make([]string, 0, len(rows)+3)
-
-	headers := make([]string, 0, len(columns))
-	divider := make([]string, 0, len(columns))
-	for index, column := range columns {
-		headers = append(headers, pad(column.Header, widths[index]))
-		divider = append(divider, strings.Repeat("-", widths[index]))
-	}
-	lines = append(lines, "  "+strings.Join(headers, separator))
-	lines = append(lines, "  "+strings.Join(divider, separator))
+	lines := make([]string, 0, len(rows)*2+1)
 
 	for index, row := range rows {
 		absoluteIndex := start + index
-		cursor := " "
-		if absoluteIndex == m.selected {
-			cursor = ">"
+		selected := absoluteIndex == m.selected
+
+		portStyle := styles.portBadge
+		processStyle := styles.process
+		pidStyle := styles.pid
+		if selected {
+			portStyle = styles.portBadgeSelected
+			processStyle = styles.processSelected
+			pidStyle = styles.pidSelected
 		}
-		values := make([]string, 0, len(columns))
-		for columnIndex, column := range columns {
-			values = append(values, pad(column.Value(row), widths[columnIndex]))
+
+		processName := valueOrDash(row.ProcessName)
+		primary := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			portStyle.Render(strconv.Itoa(row.Port)),
+			processStyle.Render(processName),
+			styles.muted.Render("⋅"),
+			styles.tagFamily.Render(listenerFamily(row)),
+			pidStyle.Render(fmt.Sprintf("pid %d", row.PID)),
+		)
+		if listenerRequiresAdmin(row) {
+			primary = lipgloss.JoinHorizontal(lipgloss.Top, primary, styles.tagProtected.Render("admin"))
 		}
-		lines = append(lines, cursor+" "+strings.Join(values, separator))
+
+		bindChip := styles.tagNeutral.Render("bind " + valueOrDash(row.BindAddress))
+		switch bindClassification(row.BindAddress) {
+		case "wildcard":
+			bindChip = styles.tagWildcard.Render("wildcard " + valueOrDash(row.BindAddress))
+		case "localhost":
+			bindChip = styles.tagLocalhost.Render("localhost " + valueOrDash(row.BindAddress))
+		}
+		meta := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			bindChip,
+		)
+
+		if selected {
+			selectedLineStyle := styles.rowSelected.Width(contentWidth)
+			lines = append(lines, selectedLineStyle.Render(truncate("▌ "+primary, contentWidth)))
+			lines = append(lines, selectedLineStyle.Render(truncate("  "+meta, contentWidth)))
+			continue
+		}
+		lines = append(lines, "  "+primary)
+		lines = append(lines, "  "+styles.muted.Render(meta))
 	}
 
-	if len(m.visible) > len(rows) {
-		lines = append(lines, fmt.Sprintf("Showing %d-%d of %d", start+1, end, len(m.visible)))
+	if len(m.visible) > len(rows) && len(lines) < maxRows {
+		lines = append(lines, styles.muted.Render(fmt.Sprintf("Showing %d-%d of %d", start+1, end, len(m.visible))))
+	}
+
+	if len(lines) > maxRows {
+		lines = lines[:maxRows]
 	}
 
 	return lines
@@ -632,11 +755,33 @@ func (m model) renderDetailLines(contentWidth int) []string {
 		actionLine = "Sink actions: disabled (admin required)"
 	}
 
+	primary := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.portBadgeSelected.Render(strconv.Itoa(selected.Port)),
+		styles.processSelected.Render(valueOrDash(selected.ProcessName)),
+		styles.pidSelected.Render(fmt.Sprintf("pid %d", selected.PID)),
+	)
+	bindChip := styles.tagNeutral.Render("bind " + valueOrDash(selected.BindAddress))
+	switch bindClassification(selected.BindAddress) {
+	case "wildcard":
+		bindChip = styles.tagWildcard.Render("wildcard " + valueOrDash(selected.BindAddress))
+	case "localhost":
+		bindChip = styles.tagLocalhost.Render("localhost " + valueOrDash(selected.BindAddress))
+	}
+
+	metaChips := []string{
+		bindChip,
+		styles.tagFamily.Render(listenerFamily(selected)),
+	}
+	if listenerRequiresAdmin(selected) {
+		metaChips = append(metaChips, styles.tagProtected.Render("admin required"))
+	}
+	meta := lipgloss.JoinHorizontal(lipgloss.Top, metaChips...)
+
 	lines := []string{
-		fmt.Sprintf("[ PORT %d ]", selected.Port),
-		fmt.Sprintf("%s (PID %d)", selected.ProcessName, selected.PID),
-		fmt.Sprintf("Bind: %s", valueOrDash(selected.BindAddress)),
-		fmt.Sprintf("Family: %s", listenerFamily(selected)),
+		primary,
+		meta,
+		"",
 		fmt.Sprintf("CPU: %s", listenerCPU(selected)),
 		fmt.Sprintf("Memory: %s", listenerMemory(selected)),
 		fmt.Sprintf("Requires admin to kill: %s", listenerAdminState(selected)),
@@ -672,7 +817,10 @@ func (m model) renderStatus() string {
 	}
 
 	line := fmt.Sprintf("%s: %s", prefix, text)
-	return truncate(line, maxInt(m.width, 40))
+	if m.statusError {
+		return truncate(styles.statusError.Render(line), maxInt(m.width, 40))
+	}
+	return truncate(styles.statusNormal.Render(line), maxInt(m.width, 40))
 }
 
 func (m model) renderHelp() string {
@@ -684,8 +832,24 @@ func (m model) renderHelp() string {
 		actionHint = "sink in progress..."
 	}
 
-	line := fmt.Sprintf("/ filter  ↑/↓ move  %s  r refresh/reconnect  Esc clear filter  q quit", actionHint)
-	return truncate(line, maxInt(m.width, 40))
+	line := fmt.Sprintf("/ filter  ↑/↓ move  %s  r reconnect  Esc clear filter  q quit", actionHint)
+	return truncate(styles.muted.Render(line), maxInt(m.width, 40))
+}
+
+func bindClassification(bindAddress string) string {
+	address := strings.TrimSpace(strings.ToLower(bindAddress))
+	switch address {
+	case "", "*", "0.0.0.0", "::", "[::]":
+		return "wildcard"
+	case "localhost", "::1":
+		return "localhost"
+	}
+
+	if strings.HasPrefix(address, "127.") {
+		return "localhost"
+	}
+
+	return "other"
 }
 
 func (m model) renderConfirmation() string {

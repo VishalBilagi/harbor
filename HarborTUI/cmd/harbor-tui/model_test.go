@@ -3,6 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPrepareSinkDisablesAdminRequiredRows(t *testing.T) {
@@ -65,8 +68,8 @@ func TestRenderTableMarksAdminRows(t *testing.T) {
 		selected:  0,
 	}
 
-	table := m.renderTable()
-	if !strings.Contains(table, "nginx [admin]") {
+	table := ansi.Strip(m.renderTable())
+	if !strings.Contains(table, "nginx") || !strings.Contains(table, "admin") {
 		t.Fatalf("expected admin marker in table row, got: %q", table)
 	}
 	if strings.Contains(table, "Cmd") || strings.Contains(table, "Cwd") {
@@ -130,14 +133,47 @@ func TestRenderDetailLinesShowsPortBadgeAndWrappedDetails(t *testing.T) {
 	}
 
 	lines := m.renderDetailLines(24)
-	joined := strings.Join(lines, " ")
-	if len(lines) == 0 || lines[0] != "[ PORT 4567 ]" {
-		t.Fatalf("expected big port badge in detail header, got: %#v", lines)
+	joined := ansi.Strip(strings.Join(lines, " "))
+	if len(lines) == 0 {
+		t.Fatalf("expected detail lines")
+	}
+	firstLine := ansi.Strip(lines[0])
+	if !strings.Contains(firstLine, "4567") || !strings.Contains(firstLine, "node") {
+		t.Fatalf("expected port+process hero line in details, got: %q", firstLine)
 	}
 	if !strings.Contains(joined, "/usr/local/bin/node") || !strings.Contains(joined, "--inspect") {
 		t.Fatalf("expected command details in panel output, got: %q", joined)
 	}
 	if !strings.Contains(joined, "/tmp/service") {
 		t.Fatalf("expected cwd details in panel output, got: %q", joined)
+	}
+}
+
+func TestStreamStateBadgeReflectsModeAndHealth(t *testing.T) {
+	streaming := model{mode: dataModeStreaming, lastSnapshot: time.Now()}
+	if !strings.Contains(ansi.Strip(streaming.streamStateBadge()), "stream live") {
+		t.Fatalf("expected live stream badge in streaming mode")
+	}
+
+	stale := model{mode: dataModeStreaming, lastSnapshot: time.Now().Add(-30 * time.Second)}
+	if !strings.Contains(ansi.Strip(stale.streamStateBadge()), "stream stale") {
+		t.Fatalf("expected stale stream badge for old snapshots")
+	}
+
+	reconnecting := model{mode: dataModeConnecting}
+	if !strings.Contains(ansi.Strip(reconnecting.streamStateBadge()), "stream reconnecting") {
+		t.Fatalf("expected reconnecting badge while connecting")
+	}
+}
+
+func TestBindClassificationSupportsSemanticTags(t *testing.T) {
+	if bindClassification("127.0.0.1") != "localhost" {
+		t.Fatalf("expected localhost classification for 127.0.0.1")
+	}
+	if bindClassification("0.0.0.0") != "wildcard" {
+		t.Fatalf("expected wildcard classification for 0.0.0.0")
+	}
+	if bindClassification("192.168.1.4") != "other" {
+		t.Fatalf("expected other classification for private interface")
 	}
 }
