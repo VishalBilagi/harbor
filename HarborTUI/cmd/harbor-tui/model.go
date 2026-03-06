@@ -43,8 +43,7 @@ type model struct {
 	filter        string
 	filterFocused bool
 
-	detailsOpen bool
-	confirm     *sinkConfirmation
+	confirm *sinkConfirmation
 
 	sinkInFlight bool
 
@@ -138,11 +137,7 @@ func (m model) View() string {
 	builder.WriteString(m.renderFilter())
 	builder.WriteString("\n")
 
-	if m.detailsOpen {
-		builder.WriteString(m.renderDetails())
-	} else {
-		builder.WriteString(m.renderTable())
-	}
+	builder.WriteString(m.renderDashboard())
 
 	builder.WriteString("\n")
 	builder.WriteString(m.renderStatus())
@@ -224,10 +219,6 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterFocused = true
 		return m, nil
 	case "esc":
-		if m.detailsOpen {
-			m.detailsOpen = false
-			return m, nil
-		}
 		if m.filter != "" {
 			m.filter = ""
 			m.refreshVisible("")
@@ -236,10 +227,6 @@ func (m model) updateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
-		if len(m.visible) == 0 {
-			return m, nil
-		}
-		m.detailsOpen = true
 		return m, nil
 	case "up":
 		m.moveSelection(-1)
@@ -452,17 +439,47 @@ func (m *model) tableWindow(maxRows int) (int, int) {
 	return m.offset, minInt(len(m.visible), m.offset+maxRows)
 }
 
-func (m model) renderTable() string {
-	if len(m.visible) == 0 {
-		if len(m.listeners) == 0 {
-			return "No active listeners in the current snapshot."
-		}
-		return "No listeners match the current filter."
+func (m model) renderDashboard() string {
+	totalWidth := maxInt(m.width, 80)
+	panelHeight := m.height - 8
+	if m.confirm != nil {
+		panelHeight -= 2
+	}
+	if panelHeight < 8 {
+		panelHeight = 8
 	}
 
+	leftWidth, rightWidth := paneWidths(totalWidth)
+	listLines := m.renderListLines(maxInt(leftWidth-2, 20), maxInt(panelHeight-2, 4))
+	detailLines := m.renderDetailLines(maxInt(rightWidth-2, 20))
+
+	leftPanel := renderPanel("Listeners", listLines, leftWidth, panelHeight)
+	rightPanel := renderPanel("Selected", detailLines, rightWidth, panelHeight)
+
+	return joinHorizontal(leftPanel, rightPanel, " ")
+}
+
+func (m model) renderTable() string {
+	width := maxInt(m.width-2, 40)
 	maxRows := m.height - 9
 	if maxRows < 5 {
 		maxRows = 5
+	}
+
+	lines := m.renderListLines(width, maxRows)
+	return strings.Join(lines, "\n")
+}
+
+func (m model) renderListLines(contentWidth int, maxRows int) []string {
+	if len(m.visible) == 0 {
+		if len(m.listeners) == 0 {
+			return []string{"No active listeners in the current snapshot."}
+		}
+		return []string{"No listeners match the current filter."}
+	}
+
+	if maxRows < 3 {
+		maxRows = 3
 	}
 
 	mutable := m
@@ -498,12 +515,6 @@ func (m model) renderTable() string {
 		{Header: "Fam", MinWidth: 3, Value: func(listener listenerRecord) string {
 			return listenerFamily(listener)
 		}},
-		{Header: "Cmd", MinWidth: 12, Flexible: true, Value: func(listener listenerRecord) string {
-			return listenerCommand(listener)
-		}},
-		{Header: "Cwd", MinWidth: 12, Flexible: true, Value: func(listener listenerRecord) string {
-			return listenerCwd(listener)
-		}},
 	}
 
 	widths := make([]int, len(columns))
@@ -523,11 +534,11 @@ func (m model) renderTable() string {
 		mins[index] = maxInt(column.MinWidth, runeLen(column.Header))
 	}
 
-	available := m.width - 1
-	if available < 40 {
-		available = 40
+	available := contentWidth - 2
+	if available < 20 {
+		available = 20
 	}
-	separatorWidth := 2
+	separatorWidth := 1
 	totalWidth := func() int {
 		sum := 0
 		for _, width := range widths {
@@ -571,7 +582,7 @@ func (m model) renderTable() string {
 	}
 
 	separator := strings.Repeat(" ", separatorWidth)
-	builder := strings.Builder{}
+	lines := make([]string, 0, len(rows)+3)
 
 	headers := make([]string, 0, len(columns))
 	divider := make([]string, 0, len(columns))
@@ -579,10 +590,8 @@ func (m model) renderTable() string {
 		headers = append(headers, pad(column.Header, widths[index]))
 		divider = append(divider, strings.Repeat("-", widths[index]))
 	}
-	builder.WriteString(" ")
-	builder.WriteString(strings.Join(headers, separator))
-	builder.WriteString("\n ")
-	builder.WriteString(strings.Join(divider, separator))
+	lines = append(lines, "  "+strings.Join(headers, separator))
+	lines = append(lines, "  "+strings.Join(divider, separator))
 
 	for index, row := range rows {
 		absoluteIndex := start + index
@@ -594,31 +603,38 @@ func (m model) renderTable() string {
 		for columnIndex, column := range columns {
 			values = append(values, pad(column.Value(row), widths[columnIndex]))
 		}
-		builder.WriteString("\n")
-		builder.WriteString(cursor)
-		builder.WriteString(strings.Join(values, separator))
+		lines = append(lines, cursor+" "+strings.Join(values, separator))
 	}
 
 	if len(m.visible) > len(rows) {
-		builder.WriteString("\n")
-		builder.WriteString(fmt.Sprintf("Showing %d-%d of %d", start+1, end, len(m.visible)))
+		lines = append(lines, fmt.Sprintf("Showing %d-%d of %d", start+1, end, len(m.visible)))
 	}
 
-	return builder.String()
+	return lines
 }
 
 func (m model) renderDetails() string {
+	return strings.Join(m.renderDetailLines(maxInt(m.width-2, 40)), "\n")
+}
+
+func (m model) renderDetailLines(contentWidth int) []string {
 	selected, ok := m.currentListener()
 	if !ok {
-		return "No listener selected."
+		return []string{"No listener selected."}
+	}
+
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+
+	actionLine := "Sink actions: k SIGTERM, K SIGKILL"
+	if listenerRequiresAdmin(selected) {
+		actionLine = "Sink actions: disabled (admin required)"
 	}
 
 	lines := []string{
-		"Details",
-		"-------",
-		fmt.Sprintf("Port: %d", selected.Port),
-		fmt.Sprintf("Process: %s", selected.ProcessName),
-		fmt.Sprintf("PID: %d", selected.PID),
+		fmt.Sprintf("[ PORT %d ]", selected.Port),
+		fmt.Sprintf("%s (PID %d)", selected.ProcessName, selected.PID),
 		fmt.Sprintf("Bind: %s", valueOrDash(selected.BindAddress)),
 		fmt.Sprintf("Family: %s", listenerFamily(selected)),
 		fmt.Sprintf("CPU: %s", listenerCPU(selected)),
@@ -626,13 +642,22 @@ func (m model) renderDetails() string {
 		fmt.Sprintf("Requires admin to kill: %s", listenerAdminState(selected)),
 		"",
 		"Command line:",
-		listenerCommand(selected),
-		"",
-		"Working directory:",
-		listenerCwd(selected),
 	}
 
-	return strings.Join(lines, "\n")
+	lines = append(lines, wrapText(listenerCommand(selected), contentWidth)...)
+	lines = append(lines, "")
+	lines = append(lines,
+		"Working directory:",
+	)
+	lines = append(lines, wrapText(listenerCwd(selected), contentWidth)...)
+	lines = append(lines,
+		"",
+		"Actions/help:",
+		actionLine,
+		"Other: / filter, r refresh/reconnect, q quit",
+	)
+
+	return lines
 }
 
 func (m model) renderStatus() string {
@@ -659,12 +684,7 @@ func (m model) renderHelp() string {
 		actionHint = "sink in progress..."
 	}
 
-	detailHint := "Enter details  Esc close/clear"
-	if m.detailsOpen {
-		detailHint = "Esc close details"
-	}
-
-	line := fmt.Sprintf("/ filter  ↑/↓ move  %s  r refresh/reconnect  %s  q quit", actionHint, detailHint)
+	line := fmt.Sprintf("/ filter  ↑/↓ move  %s  r refresh/reconnect  Esc clear filter  q quit", actionHint)
 	return truncate(line, maxInt(m.width, 40))
 }
 
@@ -683,6 +703,138 @@ func (m model) renderConfirmation() string {
 		"Press y/Enter to confirm, n/Esc to cancel.",
 	}
 	return strings.Join(lines, "\n")
+}
+
+func paneWidths(total int) (int, int) {
+	if total < 80 {
+		total = 80
+	}
+
+	left := total * 56 / 100
+	if left < 44 {
+		left = 44
+	}
+
+	if total-left-1 < 30 {
+		left = total - 31
+	}
+
+	right := total - left - 1
+	return left, right
+}
+
+func renderPanel(title string, lines []string, width int, height int) []string {
+	if width < 10 {
+		width = 10
+	}
+	if height < 3 {
+		height = 3
+	}
+
+	innerWidth := width - 2
+	innerHeight := height - 2
+
+	titleSegment := fmt.Sprintf(" %s ", title)
+	if runeLen(titleSegment) > innerWidth {
+		titleSegment = truncate(titleSegment, innerWidth)
+	}
+	top := "┌" + titleSegment + strings.Repeat("─", innerWidth-runeLen(titleSegment)) + "┐"
+	bottom := "└" + strings.Repeat("─", innerWidth) + "┘"
+
+	panel := make([]string, 0, height)
+	panel = append(panel, top)
+
+	for index := 0; index < innerHeight; index++ {
+		content := ""
+		if index < len(lines) {
+			content = truncate(lines[index], innerWidth)
+		}
+		panel = append(panel, "│"+pad(content, innerWidth)+"│")
+	}
+
+	panel = append(panel, bottom)
+	return panel
+}
+
+func joinHorizontal(left []string, right []string, gap string) string {
+	leftWidth := 0
+	rightWidth := 0
+	if len(left) > 0 {
+		leftWidth = runeLen(left[0])
+	}
+	if len(right) > 0 {
+		rightWidth = runeLen(right[0])
+	}
+
+	lineCount := maxInt(len(left), len(right))
+	lines := make([]string, 0, lineCount)
+	for index := 0; index < lineCount; index++ {
+		leftLine := strings.Repeat(" ", leftWidth)
+		rightLine := strings.Repeat(" ", rightWidth)
+		if index < len(left) {
+			leftLine = pad(left[index], leftWidth)
+		}
+		if index < len(right) {
+			rightLine = pad(right[index], rightWidth)
+		}
+		lines = append(lines, leftLine+gap+rightLine)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func wrapText(value string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "-" {
+		return []string{"-"}
+	}
+
+	paragraphs := strings.Split(trimmed, "\n")
+	result := make([]string, 0, len(paragraphs))
+
+	for paragraphIndex, paragraph := range paragraphs {
+		words := strings.Fields(paragraph)
+		if len(words) == 0 {
+			result = append(result, "")
+			continue
+		}
+
+		current := words[0]
+		for _, rawWord := range words[1:] {
+			word := rawWord
+			candidate := current + " " + word
+			if runeLen(candidate) <= width {
+				current = candidate
+				continue
+			}
+
+			result = append(result, truncate(current, width))
+
+			for runeLen(word) > width {
+				runes := []rune(word)
+				result = append(result, string(runes[:width]))
+				word = string(runes[width:])
+			}
+			current = word
+		}
+
+		for runeLen(current) > width {
+			runes := []rune(current)
+			result = append(result, string(runes[:width]))
+			current = string(runes[width:])
+		}
+		result = append(result, current)
+
+		if paragraphIndex < len(paragraphs)-1 {
+			result = append(result, "")
+		}
+	}
+
+	return result
 }
 
 func valueOrDash(value string) string {
