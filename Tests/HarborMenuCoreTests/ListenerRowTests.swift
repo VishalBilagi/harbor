@@ -167,6 +167,30 @@ import Testing
     #expect(row.tickerCwdText == "~/apps/service")
 }
 
+@Test func groupedRowsMatchMultiTokenSearchAcrossCoreFields() throws {
+    let home = NSHomeDirectory()
+    let rows = ListenerRow.grouped(from: [
+        makeListener(
+            port: 3000,
+            bindAddress: "127.0.0.1",
+            family: .ipv4,
+            pid: 42,
+            processName: "node",
+            commandLine: "node server.js --watch",
+            cwd: "\(home)/projects/harbor",
+            cpuPercent: nil,
+            memBytes: nil,
+            requiresAdminToKill: false
+        )
+    ])
+
+    let row = try #require(rows.first)
+    #expect(row.matches(query: "3000 node"))
+    #expect(row.matches(query: "42 SERVER.JS"))
+    #expect(row.matches(query: "node projects harbor"))
+    #expect(row.matches(query: "3001 node") == false)
+}
+
 @Test func groupedRowsRequireAdminIfAnyListenerNeedsIt() throws {
     let rows = ListenerRow.grouped(from: [
         makeListener(

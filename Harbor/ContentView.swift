@@ -8,11 +8,19 @@
 import AppKit
 import SwiftUI
 
+private enum DensityMode: String, CaseIterable, Identifiable {
+    case comfortable = "Comfortable"
+    case compact = "Compact"
+
+    var id: Self { self }
+}
+
 struct ContentView: View {
     @ObservedObject var model: HarborMenuModel
     @Binding var refreshIntervalSeconds: Double
 
     @State private var query = ""
+    @State private var densityMode: DensityMode = .comfortable
     @State private var pendingSinkAction: PendingSinkAction?
 
     private var visibleRows: [ListenerRow] {
@@ -21,7 +29,7 @@ struct ContentView: View {
             return model.rows
         }
 
-        let needle = trimmed.lowercased()
+        let needle = trimmed
         return model.rows.filter { $0.matches(query: needle) }
     }
 
@@ -82,8 +90,16 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            TextField("Filter by port, process, PID, command, or cwd", text: $query)
-                .textFieldStyle(.roundedBorder)
+            searchField
+
+            Picker("Density", selection: $densityMode) {
+                ForEach(DensityMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 210)
 
             Button {
                 model.refresh(for: .manualAction)
@@ -91,6 +107,7 @@ struct ContentView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
             .disabled(model.isRefreshing)
 
             SettingsLink {
@@ -103,6 +120,26 @@ struct ContentView: View {
                     .controlSize(.small)
             }
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Filter by port, process, PID, command, or cwd", text: $query)
+                .textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+        )
     }
 
     private var rowsContent: some View {
@@ -120,10 +157,11 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: densityMode == .comfortable ? 9 : 6) {
                         ForEach(visibleRows) { row in
                             ListenerRowView(
                                 row: row,
+                                densityMode: densityMode,
                                 isSinking: model.isSinking(pid: row.pid),
                                 sinkAction: { force in
                                     pendingSinkAction = PendingSinkAction(row: row, force: force)
@@ -169,6 +207,7 @@ struct ContentView: View {
 
 private struct ListenerRowView: View {
     let row: ListenerRow
+    let densityMode: DensityMode
     let isSinking: Bool
     let sinkAction: (_ force: Bool) -> Void
     let copyPIDAction: () -> Void
@@ -177,8 +216,8 @@ private struct ListenerRowView: View {
     let copyFamilyAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: titleSpacing) {
                 Button(action: copyPortAction) {
                     Text(row.portText)
                         .font(.headline.monospacedDigit().weight(.bold))
@@ -194,7 +233,7 @@ private struct ListenerRowView: View {
                 .help("Copy port \(row.portText)")
 
                 Text(row.processName)
-                    .font(.headline.weight(.semibold))
+                    .font(densityMode == .comfortable ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
@@ -212,7 +251,7 @@ private struct ListenerRowView: View {
             .lineLimit(1)
             .truncationMode(.tail)
 
-            HStack(spacing: 6) {
+            HStack(spacing: chipSpacing) {
                 copyPill("PID \(row.pid)", monospacedDigits: true, action: copyPIDAction)
                 copyPill("bind \(row.bindSummary)", tone: row.bindTone, action: copyBindAction)
                 copyPill(row.familySummary, action: copyFamilyAction)
@@ -223,18 +262,19 @@ private struct ListenerRowView: View {
 
             tickerRow
 
-            if let statsText = row.statsText {
+            if densityMode == .comfortable, let statsText = row.statsText {
                 Text(statsText)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: actionSpacing) {
                 Button("Sink") {
                     sinkAction(false)
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.roundedRectangle(radius: actionButtonRadius))
                 .tint(Color(red: 0.8, green: 0.5, blue: 0.1, opacity: 0.95))
                 .disabled(row.requiresAdminToKill || isSinking)
 
@@ -242,6 +282,7 @@ private struct ListenerRowView: View {
                     sinkAction(true)
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.roundedRectangle(radius: actionButtonRadius))
                 .tint(Color(red: 1, green: 0.09, blue: 0.25, opacity: 0.75))
                 .disabled(row.requiresAdminToKill || isSinking)
 
@@ -254,12 +295,49 @@ private struct ListenerRowView: View {
             }
             .font(.caption)
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, cardVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .fill(Color.secondary.opacity(0.08))
         )
+    }
+
+    private var sectionSpacing: CGFloat {
+        densityMode == .comfortable ? 8 : 6
+    }
+
+    private var titleSpacing: CGFloat {
+        densityMode == .comfortable ? 8 : 6
+    }
+
+    private var chipSpacing: CGFloat {
+        densityMode == .comfortable ? 6 : 5
+    }
+
+    private var actionSpacing: CGFloat {
+        densityMode == .comfortable ? 8 : 6
+    }
+
+    private var cardVerticalPadding: CGFloat {
+        densityMode == .comfortable ? 9 : 7
+    }
+
+    private var cardCornerRadius: CGFloat {
+        densityMode == .comfortable ? 12 : 11
+    }
+
+    private var actionButtonRadius: CGFloat {
+        8
+    }
+
+    private var chipHorizontalPadding: CGFloat {
+        densityMode == .comfortable ? 8 : 7
+    }
+
+    private var chipVerticalPadding: CGFloat {
+        densityMode == .comfortable ? 3 : 2
     }
 
     private func copyPill(
@@ -321,8 +399,8 @@ private struct ListenerRowView: View {
         let (foreground, background) = chipColors(for: tone)
         let base = Text(text)
             .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.horizontal, chipHorizontalPadding)
+            .padding(.vertical, chipVerticalPadding)
             .background(
                 Capsule(style: .continuous)
                     .fill(background)

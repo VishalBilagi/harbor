@@ -100,11 +100,17 @@ struct ListenerRow: Identifiable, Equatable {
     }
 
     func matches(query: String) -> Bool {
-        if String(port).contains(query) || String(pid).contains(query) {
+        let tokens = query
+            .split(whereSeparator: \.isWhitespace)
+            .map { $0.lowercased() }
+
+        guard !tokens.isEmpty else {
             return true
         }
 
-        return searchBlob.contains(query)
+        return tokens.allSatisfy { token in
+            String(port).contains(token) || String(pid).contains(token) || searchBlob.contains(token)
+        }
     }
 
     static func grouped(from listeners: [Listener]) -> [ListenerRow] {
