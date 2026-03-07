@@ -2,6 +2,20 @@
 
 Harbor is a local listening-port monitor for macOS. The repo is split into a shared Swift core, a Swift CLI, a SwiftUI app target, and a Go TUI module.
 
+## Screenshots
+
+### Menubar app
+
+![Harbor menubar app](.github/assets/Harbor-menubar.png)
+
+### CLI
+
+![Harbor CLI](.github/assets/Harbor-CLI.png)
+
+### TUI
+
+![Harbor TUI](.github/assets/Harbor-TUI.png)
+
 ## Install
 
 Install from the first-party Homebrew tap:
