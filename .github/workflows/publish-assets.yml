@@ -1,6 +1,12 @@
 name: publish-assets
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to package and upload, for example v0.2.2
+        required: true
+        type: string
   release:
     types:
       - published
@@ -19,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
 
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app
@@ -31,8 +38,19 @@ jobs:
       - name: Derive release version
         id: version
         run: |
-          tag_name='${{ github.event.release.tag_name }}'
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag_name='${{ inputs.tag }}'
+          else
+            tag_name='${{ github.event.release.tag_name }}'
+          fi
+
+          if [[ -z "$tag_name" ]]; then
+            echo "Release tag is required." >&2
+            exit 1
+          fi
+
           version="${tag_name#v}"
+          echo "tag=$tag_name" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build release assets
@@ -43,7 +61,8 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          overwrite_files: true
           files: |
             ${{ runner.temp }}/harbor-dist/Harbor-v${{ steps.version.outputs.value }}-macos.zip
             ${{ runner.temp }}/harbor-dist/harbor-v${{ steps.version.outputs.value }}-darwin-arm64.tar.gz
@@ -60,13 +79,12 @@ jobs:
 
   update-homebrew-tap:
     needs: build-and-publish-assets
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     steps:
       - name: Check out Harbor
         uses: actions/checkout@v4
-
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
 
       - name: Check out tap repository
         uses: actions/checkout@v4

@@ -19,6 +19,14 @@ STAGE_DIR="$OUTPUT_DIR/stage"
 
 mkdir -p "$OUTPUT_DIR" "$TUI_OUT_DIR" "$STAGE_DIR"
 
+require_file() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo "expected file not found: $path" >&2
+    exit 1
+  fi
+}
+
 build_cli() {
   local arch="$1"
   local derived_data="$2"
@@ -54,6 +62,8 @@ build_cli arm64 "$CLI_ARM_DD"
 build_cli x86_64 "$CLI_X86_DD"
 
 mkdir -p "$STAGE_DIR/cli-arm64" "$STAGE_DIR/cli-amd64"
+require_file "$CLI_ARM_DD/Build/Products/Release/harbor"
+require_file "$CLI_X86_DD/Build/Products/Release/harbor"
 cp "$CLI_ARM_DD/Build/Products/Release/harbor" "$STAGE_DIR/cli-arm64/harbor"
 cp "$CLI_X86_DD/Build/Products/Release/harbor" "$STAGE_DIR/cli-amd64/harbor"
 chmod +x "$STAGE_DIR/cli-arm64/harbor" "$STAGE_DIR/cli-amd64/harbor"
@@ -76,6 +86,8 @@ build_app arm64 "$APP_ARM_DD"
 build_app x86_64 "$APP_X86_DD"
 
 rm -rf "$STAGE_DIR/Harbor.app"
+require_file "$APP_ARM_DD/Build/Products/Release/Harbor.app/Contents/MacOS/Harbor"
+require_file "$APP_X86_DD/Build/Products/Release/Harbor.app/Contents/MacOS/Harbor"
 cp -R "$APP_ARM_DD/Build/Products/Release/Harbor.app" "$STAGE_DIR/Harbor.app"
 lipo -create \
   "$APP_ARM_DD/Build/Products/Release/Harbor.app/Contents/MacOS/Harbor" \

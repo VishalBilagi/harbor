@@ -11,9 +11,20 @@ DIST_DIR="$2"
 TAP_DIR="$3"
 CHECKSUMS_FILE="$DIST_DIR/checksums-v${VERSION}.txt"
 
+if [[ ! -f "$CHECKSUMS_FILE" ]]; then
+  echo "missing checksums file: $CHECKSUMS_FILE" >&2
+  exit 1
+fi
+
 sha_for() {
   local file_name="$1"
-  awk -v target="$file_name" '$2 ~ target { print $1 }' "$CHECKSUMS_FILE"
+  local sha
+  sha="$(awk -v target="$file_name" '$2 == target { print $1; exit }' "$CHECKSUMS_FILE")"
+  if [[ -z "$sha" ]]; then
+    echo "missing checksum for $file_name in $CHECKSUMS_FILE" >&2
+    exit 1
+  fi
+  printf '%s\n' "$sha"
 }
 
 CLI_ARM_SHA="$(sha_for "harbor-v${VERSION}-darwin-arm64.tar.gz")"
