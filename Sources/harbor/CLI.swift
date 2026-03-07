@@ -42,7 +42,7 @@ struct SinkOptions: Equatable {
 }
 
 enum HarborBuildInfo {
-    static let version = "0.1.0" /* x-release-please-version */
+    static let version = "0.2.0" /* x-release-please-version */
 }
 
 enum HarborCommand: Equatable {
