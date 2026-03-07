@@ -17,7 +17,7 @@ type appConfig struct {
 	showVersion bool
 }
 
-var tuiVersion = "0.2.2" // x-release-please-version
+var tuiVersion = "0.3.0" // x-release-please-version
 
 func main() {
 	cfg, err := parseConfig(os.Args[1:])
