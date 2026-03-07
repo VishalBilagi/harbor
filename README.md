@@ -2,6 +2,35 @@
 
 Harbor is a local listening-port monitor for macOS. The repo is split into a shared Swift core, a Swift CLI, a SwiftUI app target, and a Go TUI module.
 
+## Install
+
+Install from the first-party Homebrew tap:
+
+```sh
+brew tap VishalBilagi/tap
+brew install VishalBilagi/tap/harbor
+brew install VishalBilagi/tap/harbor-tui
+brew install --cask VishalBilagi/tap/harbor-app
+```
+
+Direct release assets are published on GitHub Releases if you need a manual fallback:
+
+- CLI + TUI archives: [GitHub Releases](https://github.com/VishalBilagi/harbor/releases)
+- macOS app archive: [GitHub Releases](https://github.com/VishalBilagi/harbor/releases)
+
+Basic validation after install:
+
+```sh
+harbor version
+harbor-tui --version
+open -a Harbor
+```
+
+Current packaging note:
+
+- The menubar app is currently distributed through Homebrew cask from a ZIP archive on GitHub Releases.
+- Developer ID signing and notarization are still tracked separately, so macOS may warn on first launch until that work lands.
+
 ## Layout
 
 - `Sources/PortKit`: shared Swift library used by the CLI and macOS app
@@ -96,9 +125,9 @@ TUI controls:
 ## Versioning and releases
 
 - Harbor uses repository-wide SemVer tags in `vX.Y.Z` format.
-- The baseline version line is `v0.1.x`.
 - `prepare-release` is manual (`workflow_dispatch`) and opens/updates a release PR only.
 - `publish-release` runs only when a release PR is merged and creates the tag + GitHub Release.
+- `publish-assets` runs after release publish and can also be rerun manually for a specific tag.
 - See `docs/versioning.md` for the policy and maintainer flow.
 
 ## Sink behavior and safety
