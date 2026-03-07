@@ -20,6 +20,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -61,6 +64,9 @@ jobs:
     steps:
       - name: Check out Harbor
         uses: actions/checkout@v4
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
 
       - name: Check out tap repository
         uses: actions/checkout@v4
