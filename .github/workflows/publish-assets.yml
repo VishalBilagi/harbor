@@ -1,0 +1,95 @@
+name: publish-assets
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-and-publish-assets:
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Check out Harbor
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: HarborTUI/go.mod
+
+      - name: Derive release version
+        id: version
+        run: |
+          tag_name='${{ github.event.release.tag_name }}'
+          version="${tag_name#v}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build release assets
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: scripts/release/build-assets.sh "${{ steps.version.outputs.value }}" "$RUNNER_TEMP/harbor-dist"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            ${{ runner.temp }}/harbor-dist/Harbor-v${{ steps.version.outputs.value }}-macos.zip
+            ${{ runner.temp }}/harbor-dist/harbor-v${{ steps.version.outputs.value }}-darwin-arm64.tar.gz
+            ${{ runner.temp }}/harbor-dist/harbor-v${{ steps.version.outputs.value }}-darwin-amd64.tar.gz
+            ${{ runner.temp }}/harbor-dist/harbor-tui-v${{ steps.version.outputs.value }}-darwin-arm64.tar.gz
+            ${{ runner.temp }}/harbor-dist/harbor-tui-v${{ steps.version.outputs.value }}-darwin-amd64.tar.gz
+            ${{ runner.temp }}/harbor-dist/checksums-v${{ steps.version.outputs.value }}.txt
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-release-assets-${{ steps.version.outputs.value }}
+          path: ${{ runner.temp }}/harbor-dist
+
+  update-homebrew-tap:
+    needs: build-and-publish-assets
+    runs-on: macos-15
+    steps:
+      - name: Check out Harbor
+        uses: actions/checkout@v4
+
+      - name: Check out tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: VishalBilagi/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: homebrew-tap
+
+      - name: Download packaged assets
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-release-assets-${{ needs.build-and-publish-assets.outputs.version }}
+          path: ${{ runner.temp }}/harbor-dist
+
+      - name: Render Homebrew files
+        run: scripts/release/render-homebrew-tap.sh "${{ needs.build-and-publish-assets.outputs.version }}" "$RUNNER_TEMP/harbor-dist" "$GITHUB_WORKSPACE/homebrew-tap"
+
+      - name: Create tap pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          branch: codex/release-${{ needs.build-and-publish-assets.outputs.version }}
+          commit-message: "Update Harbor Homebrew files for v${{ needs.build-and-publish-assets.outputs.version }}"
+          title: "Update Harbor Homebrew files for v${{ needs.build-and-publish-assets.outputs.version }}"
+          body: |
+            Automated update for Harbor v${{ needs.build-and-publish-assets.outputs.version }}.
+
+            Includes:
+            - `Formula/harbor.rb`
+            - `Formula/harbor-tui.rb`
+            - `Casks/harbor-app.rb`

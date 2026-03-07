@@ -39,6 +39,14 @@ Workflow: `.github/workflows/publish-release.yml`
 - Behavior: runs `release-please` with `skip-github-pull-request: true`.
 - Outcome: creates the tag and GitHub Release; does not open a new release PR.
 
+### Publish assets (on GitHub Release publish)
+
+Workflow: `.github/workflows/publish-assets.yml`
+
+- Trigger: published GitHub Release.
+- Behavior: builds CLI, TUI, and menubar app archives, uploads them to the release, and updates the Homebrew tap.
+- Outcome: release assets become installable from Homebrew-backed URLs and a tap PR is opened when credentials are available.
+
 ## Maintainer flow
 
 1. Merge feature/fix PRs into `main` as usual.
@@ -46,3 +54,4 @@ Workflow: `.github/workflows/publish-release.yml`
 3. Review the generated release PR (version/changelog).
 4. Merge the release PR.
 5. Confirm `publish-release` created tag + GitHub Release.
+6. Confirm `publish-assets` uploaded archives and opened the tap PR.
