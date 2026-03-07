@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/VishalBilagi/harbor/compare/v0.2.0...v0.2.1) (2026-03-07)
+
+
+### Bug Fixes
+
+* **release:** allow release workflow to comment on PRs ([034b4c4](https://github.com/VishalBilagi/harbor/commit/034b4c4b11628cbe83d1b33f3d5f591219956910))
+* **release:** select Xcode 26.2 for asset builds ([94f54fa](https://github.com/VishalBilagi/harbor/commit/94f54fa45f1172b24ba013ebeff075026bdfec56))
+
 ## [0.2.0](https://github.com/VishalBilagi/harbor/compare/v0.1.0...v0.2.0) (2026-03-07)
 
 
