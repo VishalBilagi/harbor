@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/VishalBilagi/harbor/compare/v0.3.0...v0.4.0) (2026-04-03)
+
+
+### Features
+
+* notifications for open/closed ports ([d2a40d6](https://github.com/VishalBilagi/harbor/commit/d2a40d661bfe400b2a1fdc7a1ddda7ea1d0e44d9))
+
+
+### Bug Fixes
+
+* confirmation dialog buttons behavior ([fe272e2](https://github.com/VishalBilagi/harbor/commit/fe272e2446c122acb736901a4200726ef722b6c6))
+
 ## [0.3.0](https://github.com/VishalBilagi/harbor/compare/v0.2.2...v0.3.0) (2026-03-07)
 
 
