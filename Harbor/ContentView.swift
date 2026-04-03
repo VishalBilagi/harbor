@@ -34,28 +34,35 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
+        ZStack {
+            VStack(alignment: .leading, spacing: 12) {
+                header
 
-            if let sinkMessage = model.sinkMessage, !sinkMessage.isEmpty {
-                Text(sinkMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if let sinkMessage = model.sinkMessage, !sinkMessage.isEmpty {
+                    Text(sinkMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                if let errorMessage = model.errorMessage, !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                rowsContent
+
+                footer
             }
+            .padding(12)
+            .disabled(pendingSinkAction != nil)
 
-            if let errorMessage = model.errorMessage, !errorMessage.isEmpty {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+            if let action = pendingSinkAction {
+                sinkConfirmationOverlay(for: action)
             }
-
-            rowsContent
-
-            footer
         }
-        .padding(12)
         .frame(width: 680, height: 520)
         .transaction { transaction in
             transaction.animation = nil
@@ -65,29 +72,6 @@ struct ContentView: View {
         }
         .task(id: Int(refreshIntervalSeconds)) {
             await model.runFallbackTimer(every: Int(refreshIntervalSeconds))
-        }
-        .confirmationDialog(
-            pendingSinkAction?.title ?? "Confirm Sink",
-            isPresented: Binding(
-                get: { pendingSinkAction != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingSinkAction = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingSinkAction
-        ) { action in
-            Button(action.confirmationLabel, role: .destructive) {
-                model.sink(pid: action.row.pid, force: action.force)
-                pendingSinkAction = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pendingSinkAction = nil
-            }
-        } message: { action in
-            Text(action.message)
         }
     }
 
@@ -200,10 +184,62 @@ struct ContentView: View {
         }
     }
 
+    private func sinkConfirmationOverlay(for action: PendingSinkAction) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.black.opacity(0.16))
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text(action.title)
+                    .font(.headline.weight(.semibold))
+
+                Text(action.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button("Cancel", action: dismissPendingSinkAction)
+                        .keyboardShortcut(.cancelAction)
+
+                    Spacer(minLength: 0)
+
+                    Button(action.confirmationLabel, role: .destructive, action: confirmPendingSinkAction)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(18)
+            .frame(width: 360)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.18), radius: 24, y: 10)
+        }
+    }
+
     private func copyToClipboard(_ value: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+
+    private func dismissPendingSinkAction() {
+        pendingSinkAction = nil
+    }
+
+    private func confirmPendingSinkAction() {
+        guard let action = pendingSinkAction else {
+            return
+        }
+
+        model.sink(pid: action.row.pid, force: action.force)
+        pendingSinkAction = nil
     }
 }
 
