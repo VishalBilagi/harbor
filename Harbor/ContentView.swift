@@ -17,7 +17,6 @@ private enum DensityMode: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @ObservedObject var model: HarborMenuModel
-    @Binding var refreshIntervalSeconds: Double
 
     @State private var query = ""
     @State private var densityMode: DensityMode = .comfortable
@@ -69,9 +68,6 @@ struct ContentView: View {
         }
         .onAppear {
             model.refresh(for: .menuOpen)
-        }
-        .task(id: Int(refreshIntervalSeconds)) {
-            await model.runFallbackTimer(every: Int(refreshIntervalSeconds))
         }
     }
 
@@ -522,7 +518,6 @@ private struct PendingSinkAction: Identifiable {
 
 #Preview {
     ContentView(
-        model: HarborMenuModel(),
-        refreshIntervalSeconds: .constant(AppSettings.defaultRefreshIntervalSeconds)
+        model: HarborMenuModel(automaticallyStartMonitoring: false)
     )
 }

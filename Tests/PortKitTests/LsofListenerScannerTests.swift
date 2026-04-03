@@ -174,6 +174,54 @@ import Testing
     #expect(snapshot.listeners.map(\.port) == [3000, 8080])
 }
 
+@Test func snapshotReportsOnlyNewUniquePortsRelativeToPreviousSnapshot() {
+    let previous = ListenerSnapshot(listeners: [
+        makeListener(port: 3000, bindAddress: "127.0.0.1", family: .ipv4, pid: 11, processName: "node"),
+        makeListener(port: 5432, bindAddress: "127.0.0.1", family: .ipv4, pid: 22, processName: "postgres"),
+        makeListener(port: 5432, bindAddress: "::1", family: .ipv6, pid: 22, processName: "postgres")
+    ])
+    let current = ListenerSnapshot(listeners: [
+        makeListener(port: 3000, bindAddress: "127.0.0.1", family: .ipv4, pid: 11, processName: "node"),
+        makeListener(port: 5432, bindAddress: "127.0.0.1", family: .ipv4, pid: 22, processName: "postgres"),
+        makeListener(port: 5432, bindAddress: "::1", family: .ipv6, pid: 22, processName: "postgres"),
+        makeListener(port: 8080, bindAddress: "127.0.0.1", family: .ipv4, pid: 33, processName: "api"),
+        makeListener(port: 8080, bindAddress: "::1", family: .ipv6, pid: 33, processName: "api"),
+        makeListener(port: 9222, bindAddress: "127.0.0.1", family: .ipv4, pid: 44, processName: "chrome")
+    ])
+
+    #expect(current.newlyListeningPorts(since: previous) == [8080, 9222])
+}
+
+@Test func snapshotReportsOnlyClosedUniquePortsRelativeToPreviousSnapshot() {
+    let previous = ListenerSnapshot(listeners: [
+        makeListener(port: 3000, bindAddress: "127.0.0.1", family: .ipv4, pid: 11, processName: "node"),
+        makeListener(port: 8080, bindAddress: "127.0.0.1", family: .ipv4, pid: 33, processName: "api"),
+        makeListener(port: 8080, bindAddress: "::1", family: .ipv6, pid: 33, processName: "api"),
+        makeListener(port: 9222, bindAddress: "127.0.0.1", family: .ipv4, pid: 44, processName: "chrome")
+    ])
+    let current = ListenerSnapshot(listeners: [
+        makeListener(port: 3000, bindAddress: "127.0.0.1", family: .ipv4, pid: 11, processName: "node")
+    ])
+
+    #expect(current.closedListeningPorts(since: previous) == [8080, 9222])
+}
+
+@Test func snapshotSkipsNewPortNotificationsWithoutABaseline() {
+    let snapshot = ListenerSnapshot(listeners: [
+        makeListener(port: 8080, bindAddress: "127.0.0.1", family: .ipv4, pid: 99, processName: "api")
+    ])
+
+    #expect(snapshot.newlyListeningPorts(since: nil).isEmpty)
+}
+
+@Test func snapshotSkipsClosedPortNotificationsWithoutABaseline() {
+    let snapshot = ListenerSnapshot(listeners: [
+        makeListener(port: 8080, bindAddress: "127.0.0.1", family: .ipv4, pid: 99, processName: "api")
+    ])
+
+    #expect(snapshot.closedListeningPorts(since: nil).isEmpty)
+}
+
 private func fixture(named name: String) throws -> String {
     let testsDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -183,4 +231,21 @@ private func fixture(named name: String) throws -> String {
         .appendingPathComponent(name)
 
     return try String(contentsOf: fixtureURL, encoding: .utf8)
+}
+
+private func makeListener(
+    port: Int,
+    bindAddress: String,
+    family: ListenerFamily,
+    pid: Int,
+    processName: String
+) -> Listener {
+    Listener(
+        proto: .tcp,
+        port: port,
+        bindAddress: bindAddress,
+        family: family,
+        pid: pid,
+        processName: processName
+    )
 }

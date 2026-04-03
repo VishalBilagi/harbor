@@ -77,6 +77,26 @@ public struct ListenerSnapshot: Codable, Sendable, Equatable {
         self.generatedAt = generatedAt
         self.listeners = listeners.sorted()
     }
+
+    public func newlyListeningPorts(since previous: ListenerSnapshot?) -> [Int] {
+        guard let previous else {
+            return []
+        }
+
+        let previousPorts = Set(previous.listeners.map(\.port))
+        let currentPorts = Set(listeners.map(\.port))
+        return currentPorts.subtracting(previousPorts).sorted()
+    }
+
+    public func closedListeningPorts(since previous: ListenerSnapshot?) -> [Int] {
+        guard let previous else {
+            return []
+        }
+
+        let previousPorts = Set(previous.listeners.map(\.port))
+        let currentPorts = Set(listeners.map(\.port))
+        return previousPorts.subtracting(currentPorts).sorted()
+    }
 }
 
 public enum SinkSignal: String, Codable, Sendable, Equatable {

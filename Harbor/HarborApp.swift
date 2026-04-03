@@ -15,10 +15,7 @@ struct HarborApp: App {
 
     var body: some Scene {
         MenuBarExtra("Harbor", systemImage: "ferry.fill") {
-            ContentView(
-                model: model,
-                refreshIntervalSeconds: $refreshIntervalSeconds
-            )
+            ContentView(model: model)
         }
         .menuBarExtraStyle(.window)
 
