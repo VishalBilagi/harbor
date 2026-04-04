@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/VishalBilagi/harbor/compare/v0.4.0...v0.5.0) (2026-04-04)
+
+
+### Features
+
+* **mac:** add new app icon ([78180a4](https://github.com/VishalBilagi/harbor/commit/78180a41bffedded521d5fda4c0b569545a959b8))
+
 ## [0.4.0](https://github.com/VishalBilagi/harbor/compare/v0.3.0...v0.4.0) (2026-04-03)
 
 
